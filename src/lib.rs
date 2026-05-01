@@ -8,13 +8,17 @@
 extern crate alloc;
 use core::panic::PanicInfo;
 
+pub mod arch;
+pub mod drivers;
 pub mod allocator;
-pub mod gdt;
-pub mod interrupts;
-pub mod memory;
-pub mod serial;
 pub mod task;
-pub mod vga_buffer;
+pub mod vfs;
+pub mod shell;
+
+// Re-export arch modules at the crate root for ergonomic access
+pub use arch::x86_64::gdt;
+pub use arch::x86_64::interrupts;
+pub use arch::x86_64::memory;
 
 pub fn init() {
     gdt::init();
@@ -22,6 +26,7 @@ pub fn init() {
     unsafe { interrupts::PICS.lock().initialize() };
     x86_64::instructions::interrupts::enable();
 }
+
 pub trait Testable {
     fn run(&self) -> ();
 }
@@ -80,7 +85,6 @@ use bootloader::{BootInfo, entry_point};
 #[cfg(test)]
 entry_point!(test_kernel_main);
 
-/// Entry point for `cargo xtest`
 #[cfg(test)]
 fn test_kernel_main(_boot_info: &'static BootInfo) -> ! {
     init();

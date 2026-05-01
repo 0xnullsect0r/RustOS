@@ -1,0 +1,119 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Version tag (e.g. v0.1.0)"
+        required: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-iso:
+    name: Build Bootable ISO
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install nightly Rust + components
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src, llvm-tools-preview
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-release-
+
+      - name: Install bootimage
+        run: cargo install bootimage
+
+      - name: Install ISO build tools
+        run: sudo apt-get update && sudo apt-get install -y xorriso grub-pc-bin grub-common
+
+      - name: Build kernel with bootimage
+        run: cargo bootimage --release
+
+      - name: Determine binary name
+        id: bins
+        run: |
+          BIN=$(find target -name "bootimage-rustos.bin" | head -1)
+          echo "bin=$BIN" >> "$GITHUB_OUTPUT"
+
+      - name: Create ISO directory structure
+        run: |
+          mkdir -p iso_root/boot
+          cp "${{ steps.bins.outputs.bin }}" iso_root/boot/rustos.bin
+
+      - name: Build El Torito bootable ISO with xorriso
+        run: |
+          xorriso -as mkisofs \
+            -b boot/rustos.bin \
+            -no-emul-boot \
+            -boot-load-size 4 \
+            -boot-info-table \
+            -o rustos.iso \
+            iso_root/
+
+      - name: Determine release tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Rename ISO with version
+        run: mv rustos.iso rustos-${{ steps.tag.outputs.tag }}.iso
+
+      - name: Upload ISO artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustos-iso
+          path: rustos-${{ steps.tag.outputs.tag }}.iso
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: RustOS ${{ steps.tag.outputs.tag }}
+          body: |
+            ## RustOS ${{ steps.tag.outputs.tag }}
+
+            ### Download
+            - **`rustos-${{ steps.tag.outputs.tag }}.iso`** — bootable ISO image (BIOS, El Torito)
+
+            ### Running
+            **QEMU:**
+            ```bash
+            qemu-system-x86_64 -cdrom rustos-${{ steps.tag.outputs.tag }}.iso
+            ```
+
+            **Write to USB (Linux):**
+            ```bash
+            sudo dd if=rustos-${{ steps.tag.outputs.tag }}.iso of=/dev/sdX bs=4M status=progress
+            ```
+
+            ### What's in this release
+            - Interactive shell with VFS (ls, cd, mkdir, rm, cat, write, cp, mv, ...)
+            - VGA text mode output
+            - Async/await task executor
+            - x86_64 interrupt handling (IDT, GDT, PIC)
+            - Heap allocator
+          files: rustos-${{ steps.tag.outputs.tag }}.iso
+          draft: false
+          prerelease: ${{ contains(steps.tag.outputs.tag, '-') }}
