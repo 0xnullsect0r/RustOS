@@ -107,8 +107,7 @@ impl FrameBufferWriter {
         };
 
         let len = self.info.bytes_per_pixel.min(4);
-        self.framebuffer[byte_offset..(len + byte_offset)]
-            .copy_from_slice(&color_bytes[..len]);
+        self.framebuffer[byte_offset..(len + byte_offset)].copy_from_slice(&color_bytes[..len]);
     }
 
     /// Clears the entire screen with the background color.

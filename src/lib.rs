@@ -26,11 +26,22 @@ pub use arch::x86_64::gdt;
 pub use arch::x86_64::interrupts;
 pub use arch::x86_64::memory;
 
-pub fn init() {
+/// Initialize CPU descriptor tables and the interrupt controller while keeping
+/// interrupts disabled. Call [`enable_interrupts`] only after all interrupt
+/// handlers' dependencies are ready.
+pub fn init_without_interrupts() {
     gdt::init();
     interrupts::init_idt();
     unsafe { interrupts::PICS.lock().initialize() };
+}
+
+pub fn enable_interrupts() {
     x86_64::instructions::interrupts::enable();
+}
+
+pub fn init() {
+    init_without_interrupts();
+    enable_interrupts();
 }
 
 pub trait Testable {

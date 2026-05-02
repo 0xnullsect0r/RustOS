@@ -58,7 +58,7 @@ fn cmd_echo(args: &[&str]) {
 }
 
 fn cmd_clear() {
-    crate::drivers::vga::WRITER.lock().clear_screen();
+    crate::drivers::vga::clear_screen();
 }
 
 fn cmd_uname() {
@@ -114,7 +114,7 @@ fn cmd_color(shell: &mut Shell, args: &[&str]) {
     };
     shell.fg_color = fg;
     shell.bg_color = bg;
-    crate::drivers::vga::WRITER.lock().set_color(fg, bg);
+    crate::drivers::vga::set_color(fg, bg);
 }
 
 fn cmd_pwd(shell: &Shell) {

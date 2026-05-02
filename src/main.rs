@@ -35,20 +35,23 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     // while interrupts are still disabled, we ensure thread-safe access later.
     rustos::serial_println!("[kernel] Serial initialized");
 
-    rustos::init();
-
-    // Initialize framebuffer early if available (before println!)
+    // Take over the bootloader-provided framebuffer before any code can print
+    // through the VGA fallback. On UEFI systems VGA memory is often absent, so
+    // falling back to 0xb8000 during early exceptions/IRQs can fault and reset.
     if let Some(framebuffer) = boot_info.framebuffer.take() {
         rustos::serial_println!("[kernel] Framebuffer available, initializing...");
         unsafe {
             rustos::drivers::framebuffer::init(framebuffer);
         }
         rustos::serial_println!("[kernel] Framebuffer initialized successfully");
-        // Clear screen and show boot message
         println!("\n=== RustOS Kernel Initializing ===\n");
     } else {
         rustos::serial_println!("[kernel] No framebuffer available, using VGA fallback");
     }
+
+    // Load GDT/IDT and program the PIC now, but do not enable interrupts until
+    // memory, heap, VFS, USB probing, and the keyboard queue are initialized.
+    rustos::init_without_interrupts();
 
     let phys_mem_offset = VirtAddr::new(
         boot_info
@@ -81,16 +84,16 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 
     // Initialise VFS
     rustos::vfs::init();
-    install_rsh_binary();
 
     // Probe PCI for XHCI and mount USB FAT32
     init_usb_storage();
     rustos::task::keyboard::init();
+    rustos::enable_interrupts();
 
     #[cfg(test)]
     test_main();
 
-    launch_rsh();
+    launch_kernel_shell();
 }
 
 /// Scan PCI for an XHCI controller, initialise it, store it in the global
@@ -136,43 +139,20 @@ fn init_usb_storage() {
     rustos::usb::mount_storage_devices(0);
 }
 
-fn install_rsh_binary() {
-    let rsh = include_bytes!(env!("RSH_ELF_PATH"));
-    let mut guard = rustos::vfs::VFS.lock();
-    let Some(vfs) = guard.as_mut() else {
-        println!("[init] VFS not initialized; cannot install /bin/rsh");
-        return;
-    };
-    match vfs.mkdir("/bin") {
-        Ok(()) | Err(rustos::vfs::VfsError::AlreadyExists) => {}
-        Err(e) => {
-            println!("[init] failed to create /bin: {}", e);
-            return;
-        }
-    }
-    if let Err(e) = vfs.write_file("/bin/rsh", rsh) {
-        println!("[init] failed to install /bin/rsh: {}", e);
-    }
-}
-
 /// Runs the built-in kernel shell using the framebuffer output.
 /// This provides a simple command interface without launching an external process.
-fn launch_rsh() -> ! {
+fn launch_kernel_shell() -> ! {
     rustos::serial_println!("[init] Starting built-in kernel shell...");
     println!("\n=== RustOS Built-in Shell ===");
     println!("Type 'help' for available commands\n");
-    
+
     let mut shell = rustos::shell::Shell::new();
     shell.print_prompt();
-    
+
     loop {
         // Wait for keyboard input
         if let Some(byte) = rustos::task::keyboard::read_input_byte() {
-            if let Ok(c) = core::str::from_utf8(&[byte]) {
-                if let Some(ch) = c.chars().next() {
-                    shell.handle_char(ch);
-                }
-            }
+            shell.handle_char(byte as char);
         } else {
             // No input available, yield CPU
             x86_64::instructions::hlt();

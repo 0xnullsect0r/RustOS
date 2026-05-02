@@ -143,15 +143,11 @@ pub fn exec(data: &[u8]) -> Result<i64, String> {
         if file_end > data.len() {
             return Err(String::from("segment file data out of bounds"));
         }
-            
+
         unsafe {
             let dst = vaddr as *mut u8;
-            core::ptr::copy_nonoverlapping(
-                data.as_ptr().add(file_start),
-                dst,
-                p_filesz as usize,
-            );
-            
+            core::ptr::copy_nonoverlapping(data.as_ptr().add(file_start), dst, p_filesz as usize);
+
             // Zero BSS (p_memsz > p_filesz)
             if p_memsz > p_filesz {
                 core::ptr::write_bytes(
