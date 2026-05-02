@@ -12,7 +12,7 @@
 //! normally from the interrupt would re-enter the process's `loop {}`.
 //!
 //! # Virtual address layout
-//! ```
+//! ```text
 //! 0x0040_0000  process code/data segments (from ELF)
 //! 0x0080_0000  process stack  (64 KiB, grows down)
 //! ```
