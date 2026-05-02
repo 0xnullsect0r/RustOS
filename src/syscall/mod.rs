@@ -11,6 +11,7 @@ use x86_64::structures::idt::InterruptStackFrame;
 /// Uses Linux-compatible numbering so rustos-rt programs feel familiar.
 pub const SYS_READ: u64 = 0;
 pub const SYS_WRITE: u64 = 1;
+pub const SYS_EXEC: u64 = 59;
 pub const SYS_EXIT: u64 = 60;
 
 /// File descriptors
@@ -46,17 +47,25 @@ pub extern "x86-interrupt" fn syscall_handler(_stack_frame: InterruptStackFrame)
 }
 
 fn dispatch(nr: u64, a1: u64, a2: u64, a3: u64) {
-    match nr {
-        SYS_READ => {
-            sys_read(a1, a2 as *mut u8, a3 as usize);
+    let ret = match nr {
+        SYS_READ => sys_read(a1, a2 as *mut u8, a3 as usize),
+        SYS_WRITE => sys_write(a1, a2 as *const u8, a3 as usize),
+        SYS_EXEC => sys_exec(a1 as *const u8),
+        SYS_EXIT => {
+            sys_exit(a1 as i64);
+            0
         }
-        SYS_WRITE => {
-            sys_write(a1, a2 as *const u8, a3 as usize);
-        }
-        SYS_EXIT => sys_exit(a1 as i64),
         _ => {
             crate::serial_println!("[syscall] unknown nr={}", nr);
+            -38 // -ENOSYS
         }
+    };
+    unsafe {
+        core::arch::asm!(
+            "mov rax, {ret}",
+            ret = in(reg) ret as u64,
+            options(nostack, nomem, preserves_flags),
+        );
     }
 }
 
@@ -69,9 +78,9 @@ fn sys_exit(code: i64) {
     }
 }
 
-fn sys_write(fd: u64, buf: *const u8, len: usize) {
+fn sys_write(fd: u64, buf: *const u8, len: usize) -> i64 {
     if buf.is_null() || len == 0 {
-        return;
+        return 0;
     }
     // Safety: the process is ring-0; buffer validity is caller's responsibility.
     let slice = unsafe { core::slice::from_raw_parts(buf, len) };
@@ -81,13 +90,73 @@ fn sys_write(fd: u64, buf: *const u8, len: usize) {
             FD_STDERR => {
                 crate::serial_print!("{}", s);
             }
-            _ => {}
+            _ => return -9, // -EBADF
         }
+        len as i64
+    } else {
+        -22 // -EINVAL
     }
 }
 
-fn sys_read(fd: u64, buf: *mut u8, len: usize) -> usize {
-    // Keyboard read is async; for simplicity return 0 (would block in real OS).
-    let _ = (fd, buf, len);
-    0
+fn sys_read(fd: u64, buf: *mut u8, len: usize) -> i64 {
+    if fd != FD_STDIN {
+        return -9; // -EBADF
+    }
+    if buf.is_null() || len == 0 {
+        return 0;
+    }
+    let out = unsafe { core::slice::from_raw_parts_mut(buf, len) };
+    let mut n = 0usize;
+    while n < out.len() {
+        match crate::task::keyboard::read_input_byte() {
+            Some(b) => {
+                out[n] = b;
+                n += 1;
+                if b == b'\n' || b == b'\r' {
+                    break;
+                }
+            }
+            None => break,
+        }
+    }
+    n as i64
+}
+
+fn sys_exec(path_ptr: *const u8) -> i64 {
+    if path_ptr.is_null() {
+        return -22; // -EINVAL
+    }
+    let path = unsafe { cstr_to_str(path_ptr) };
+    let Some(path) = path else {
+        return -22;
+    };
+    let data = {
+        let mut guard = crate::vfs::VFS.lock();
+        let Some(vfs) = guard.as_mut() else {
+            return -5; // -EIO
+        };
+        match vfs.read_file(path) {
+            Ok(d) => d,
+            Err(_) => return -2, // -ENOENT
+        }
+    };
+    match crate::process::exec(&data) {
+        Ok(code) => code,
+        Err(_) => -8, // -ENOEXEC
+    }
+}
+
+unsafe fn cstr_to_str(ptr: *const u8) -> Option<&'static str> {
+    let mut len = 0usize;
+    while len < 4096 {
+        if unsafe { *ptr.add(len) } == 0 {
+            break;
+        }
+        len += 1;
+    }
+    if len == 4096 {
+        return None;
+    }
+    let bytes = unsafe { core::slice::from_raw_parts(ptr, len) };
+    core::str::from_utf8(bytes).ok()
 }

@@ -1,11 +1,11 @@
 # RustOS
 
-A minimal x86_64 operating system kernel written in Rust, featuring an interactive shell,
+A minimal x86_64 operating system kernel written in Rust, featuring a userspace shell (`rsh`),
 virtual filesystem, USB mass-storage support, and a Rust userspace runtime.
 
 Built on the foundation of [Philipp Oppermann's "Writing an OS in Rust"](https://os.phil-opp.com/)
 tutorial series (through post-12), then extended with a modular architecture, VFS layer,
-XHCI USB driver, FAT32 filesystem, ELF process loader, and a full interactive shell.
+XHCI USB driver, FAT32 filesystem, ELF process loader, and a userspace shell environment.
 
 ## Features
 
@@ -15,7 +15,7 @@ XHCI USB driver, FAT32 filesystem, ELF process loader, and a full interactive sh
 - **GDT + IDT** — segmentation, interrupt/exception handlers
 - **Memory paging** + **heap allocator** (fixed-size block allocator)
 - **Async executor** — keyboard input handled via `async/await`
-- **Interactive shell** with 19 built-in commands
+- **Userspace shell (`rsh`)** launched from `/bin/rsh` at boot
 - **VFS with mount table** — RamFs (root `/`) + FAT32 mounts side-by-side
 - **In-memory RAM filesystem** — create, read, write, copy, move, delete files and directories
 - **PCI enumeration** — finds XHCI host controllers on the PCI bus
@@ -27,29 +27,17 @@ XHCI USB driver, FAT32 filesystem, ELF process loader, and a full interactive sh
 - **`int 0x80` syscall interface** — `SYS_READ`, `SYS_WRITE`, `SYS_EXIT`, `SYS_OPEN`, `SYS_CLOSE`
 - **[rustos-rt](../../tree/rustos-rt)** — companion Rust userspace runtime crate (separate branch)
 
-## Shell commands
+## Shell (`rsh`)
 
-| Command | Description |
-|---------|-------------|
-| `help` | List all commands |
-| `echo <text>` | Print text to screen |
-| `clear` | Clear the screen |
-| `uname` | Show OS name and version |
-| `color <fg> <bg>` | Change text colour (black/blue/green/cyan/red/magenta/yellow/white/…) |
-| `pwd` | Print working directory |
-| `ls [path]` | List directory contents |
-| `cd <path>` | Change directory |
-| `mkdir <path>` | Create directory |
-| `rm <path>` | Remove file or empty directory |
-| `cat <path>` | Print file contents |
-| `write <path> <text>` | Write text to a file (overwrites) |
-| `cp <src> <dst>` | Copy a file (works across filesystems, e.g. `/usb` → `/`) |
-| `mv <src> <dst>` | Move / rename a file or directory |
-| `meminfo` | Show heap usage statistics |
-| `mount` | Show mounted filesystems |
-| `exec <path>` | Execute an ELF binary loaded from the VFS |
-| `usbscan` | Scan for newly plugged-in USB drives and mount them |
-| `reboot` | Reboot the machine |
+RustOS now uses [`rsh`](https://github.com/RustOS-Dev/rsh) as its shell.
+The repository is included as a git submodule at:
+
+```text
+third_party/rsh
+```
+
+During `cargo build`/`cargo run`, RustOS builds `third_party/rsh` and installs
+the resulting ELF into the VFS as `/bin/rsh`, then launches it as the init shell.
 
 ## USB flash drive workflow
 
@@ -138,13 +126,13 @@ src/
 │   ├── mod.rs            # Filesystem trait, mount table, VFS global
 │   └── ramfs.rs          # In-memory RAM filesystem
 ├── process/              # ELF loader, process exec
-├── syscall/              # int 0x80 dispatcher
-└── shell/
-    ├── mod.rs            # Shell struct, line editor, command dispatch
-    └── commands.rs       # All built-in command implementations
+└── syscall/              # int 0x80 dispatcher
 
 crates/
 └── rustos-rt/            # Userspace Rust runtime (also on branch rustos-rt)
+
+third_party/
+└── rsh/                  # Shell submodule source (userspace program)
 ```
 
 ## Building and running
@@ -237,3 +225,11 @@ Every push and pull request runs:
 - `cargo fmt --check` — formatting
 - `cargo clippy` — lints
 - `cargo test` — integration tests under QEMU
+
+## Submodules
+
+Clone/update with submodules so `rsh` is available:
+
+```sh
+git submodule update --init --recursive
+```
