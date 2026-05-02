@@ -259,6 +259,8 @@ pub fn _print(args: fmt::Arguments) {
 ///
 /// This must be called exactly once during kernel initialization.
 pub unsafe fn init(framebuffer: FrameBuffer) {
-    let writer = FrameBufferWriter::new(framebuffer);
-    *FRAMEBUFFER_WRITER.lock() = Some(writer);
+    unsafe {
+        let writer = FrameBufferWriter::new(framebuffer);
+        *FRAMEBUFFER_WRITER.lock() = Some(writer);
+    }
 }

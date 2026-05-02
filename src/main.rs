@@ -30,11 +30,15 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     
     // Initialize framebuffer early if available (before println!)
     if let Some(framebuffer) = boot_info.framebuffer.take() {
+        rustos::serial_println!("[kernel] Framebuffer available, initializing...");
         unsafe {
             rustos::drivers::framebuffer::init(framebuffer);
         }
+        rustos::serial_println!("[kernel] Framebuffer initialized successfully");
         // Clear screen and show boot message
         println!("\n=== RustOS Kernel Initializing ===\n");
+    } else {
+        rustos::serial_println!("[kernel] No framebuffer available, using VGA fallback");
     }
 
     let phys_mem_offset = VirtAddr::new(
@@ -145,6 +149,7 @@ fn install_rsh_binary() {
 /// Launches `/bin/rsh` as the init shell process and restarts it on exit.
 fn launch_rsh() -> ! {
     let embedded_rsh = include_bytes!(env!("RSH_ELF_PATH"));
+    rustos::serial_println!("[init] Launching /bin/rsh...");
     println!("RustOS v{} — launching /bin/rsh", env!("CARGO_PKG_VERSION"));
     loop {
         let from_vfs = {
