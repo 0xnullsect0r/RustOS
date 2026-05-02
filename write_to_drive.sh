@@ -172,16 +172,37 @@ if [[ "$PTTYPE" == "gpt" ]]; then
 
     # Give the kernel a brief moment to expose the updated GPT layout.
     sleep "$GPT_SYNC_DELAY_SECONDS"
-    PART_SPEC='type=0700,name="rustos-storage"'
+    
+    # Use sgdisk to add the new partition for GPT disks
+    # -n 2:0:0 means: partition 2, start at next available sector, use all remaining space
+    # -t 2:0700 sets the partition type to "Microsoft basic data" (suitable for FAT32)
+    # -c 2:"rustos-storage" sets the partition name
+    echo "Adding storage partition using sgdisk..."
+    if command -v sudo &>/dev/null && [[ "$(id -u)" -ne 0 ]]; then
+        sudo sgdisk -n 2:0:0 -t 2:0700 -c 2:"rustos-storage" "$DRIVE"
+        sudo blockdev --rereadpt "$DRIVE" || true
+        sudo partprobe "$DRIVE" || true
+    else
+        sgdisk -n 2:0:0 -t 2:0700 -c 2:"rustos-storage" "$DRIVE"
+        blockdev --rereadpt "$DRIVE" || true
+        partprobe "$DRIVE" || true
+    fi
 else
+    # For MBR/DOS partition tables, use sfdisk
     PART_SPEC='type=c'
+    if command -v sudo &>/dev/null && [[ "$(id -u)" -ne 0 ]]; then
+        printf '%s\n' "$PART_SPEC" | sudo sfdisk --append "$DRIVE"
+        sudo blockdev --rereadpt "$DRIVE" || true
+        sudo partprobe "$DRIVE" || true
+    else
+        printf '%s\n' "$PART_SPEC" | sfdisk --append "$DRIVE"
+        blockdev --rereadpt "$DRIVE" || true
+        partprobe "$DRIVE" || true
+    fi
 fi
 
-if command -v sudo &>/dev/null && [[ "$(id -u)" -ne 0 ]]; then
-    printf '%s\n' "$PART_SPEC" | sudo sfdisk --append "$DRIVE"
-else
-    printf '%s\n' "$PART_SPEC" | sfdisk --append "$DRIVE"
-fi
+# Give the kernel time to create the partition device node
+sleep "$GPT_SYNC_DELAY_SECONDS"
 
 if [[ "$DRIVE" =~ [0-9]$ ]]; then
     STORAGE_PART="${DRIVE}p2"
