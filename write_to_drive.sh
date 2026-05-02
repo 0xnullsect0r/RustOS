@@ -169,6 +169,7 @@ if [[ "$PTTYPE" == "gpt" ]]; then
         partprobe "$DRIVE" || true
     fi
 
+    # Give the kernel a brief moment to expose the updated GPT layout.
     sleep 1
     PART_SPEC='type=0700,name="rustos-storage"'
 else
