@@ -160,6 +160,10 @@ fn launch_rsh() -> ! {
     let embedded_rsh = include_bytes!(env!("RSH_ELF_PATH"));
     rustos::serial_println!("[init] Launching /bin/rsh...");
     println!("RustOS v{} — launching /bin/rsh", env!("CARGO_PKG_VERSION"));
+    
+    const MAX_CONSECUTIVE_FAILURES: usize = 10;
+    let mut consecutive_failures = 0;
+    
     loop {
         let from_vfs = {
             let mut guard = rustos::vfs::VFS.lock();
@@ -180,8 +184,35 @@ fn launch_rsh() -> ! {
             }
         };
         match rustos::process::exec(&data) {
-            Ok(code) => println!("[init] /bin/rsh exited with code {}", code),
-            Err(e) => println!("[init] /bin/rsh failed to start: {}", e),
+            Ok(code) => {
+                println!("[init] /bin/rsh exited with code {}", code);
+                consecutive_failures = 0; // Reset on successful execution
+            }
+            Err(e) => {
+                println!("[init] /bin/rsh failed to start: {}", e);
+                
+                // If segment mapping fails, don't retry - it indicates a critical error
+                // that won't be fixed by retrying (e.g., out of memory, addresses already mapped)
+                if e.contains("mapping failed") {
+                    println!("[init] Segment or stack mapping failure indicates a critical system error");
+                    println!("[init] Cannot retry as page tables may be in an inconsistent state");
+                    println!("[init] Halting system");
+                    rustos::hlt_loop();
+                }
+                
+                consecutive_failures += 1;
+                
+                if consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
+                    println!("[init] Too many consecutive failures ({}), halting system", consecutive_failures);
+                    rustos::hlt_loop();
+                }
+                
+                // Add a small delay to prevent tight loop
+                println!("[init] Waiting before retry... ({}/{})", consecutive_failures, MAX_CONSECUTIVE_FAILURES);
+                for _ in 0..10_000_000 {
+                    core::hint::spin_loop();
+                }
+            }
         }
         println!("[init] restarting /bin/rsh");
     }
