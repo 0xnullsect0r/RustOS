@@ -6,8 +6,8 @@
 
 extern crate alloc;
 
-use bootloader_api::{BootInfo, BootloaderConfig, entry_point};
 use bootloader_api::config::Mapping;
+use bootloader_api::{BootInfo, BootloaderConfig, entry_point};
 use core::panic::PanicInfo;
 use rustos::println;
 use rustos::task::{Task, executor::Executor};
@@ -37,10 +37,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 
     // Store globals for use by drivers and process loader
     memory::PHYS_MEM_OFFSET.store(
-        boot_info
-            .physical_memory_offset
-            .into_option()
-            .unwrap(),
+        boot_info.physical_memory_offset.into_option().unwrap(),
         Ordering::Relaxed,
     );
     {
