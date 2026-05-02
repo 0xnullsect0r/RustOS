@@ -26,6 +26,10 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     use rustos::memory::{self, BootInfoFrameAllocator};
     use x86_64::VirtAddr;
 
+    // Force early initialization of serial port (before enabling interrupts)
+    // This prevents deadlock if an interrupt fires during lazy_static init
+    rustos::serial_println!("[kernel] Serial initialized");
+
     rustos::init();
 
     // Initialize framebuffer early if available (before println!)
