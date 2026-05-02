@@ -276,7 +276,10 @@ impl FramebufferWriter {
                 }
             }
             _ => {
-                // Unknown: try RGB order
+                // Unknown pixel format — fall back to RGB byte order.
+                // The bootloader reports this as `PixelFormat::U8` or an
+                // unrecognised variant; a serial warning is emitted once via
+                // the `init` function, so we silently best-effort here.
                 pixel[0] = rgb[0];
                 if bpp > 1 {
                     pixel[1] = rgb[1];
@@ -389,6 +392,16 @@ lazy_static! {
 /// Initialise the framebuffer writer.  Called once from `kernel_main` with the
 /// pointer and layout info provided by the UEFI bootloader.
 pub fn init(fb: *mut u8, info: FrameBufferInfo) {
+    // Warn on serial if the pixel format is not one we handle explicitly.
+    match info.pixel_format {
+        PixelFormat::Rgb | PixelFormat::Bgr => {}
+        other => {
+            crate::serial_println!(
+                "[fb] warning: unrecognised pixel format {:?}, using RGB byte order",
+                other
+            );
+        }
+    }
     let mut writer = FramebufferWriter::new(fb, info);
     writer.clear();
     *FRAMEBUFFER.lock() = Some(writer);

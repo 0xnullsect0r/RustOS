@@ -115,7 +115,7 @@ fn color_to_rgb(c: Color) -> [u8; 3] {
         Color::LightGray => [0xAA, 0xAA, 0xAA],
         Color::DarkGray  => [0x55, 0x55, 0x55],
         Color::LightBlue => [0x55, 0x55, 0xFF],
-        Color::LightGreen=> [0x55, 0xFF, 0x55],
+        Color::LightGreen => [0x55, 0xFF, 0x55],
         Color::LightCyan => [0x55, 0xFF, 0xFF],
         Color::LightRed  => [0xFF, 0x55, 0x55],
         Color::Pink      => [0xFF, 0x55, 0xFF],
@@ -364,7 +364,9 @@ fn cmd_usbscan() {
 ///
 /// Strips the leading `./` (if present), resolves the path relative to `cwd`,
 /// reads the file from the VFS, and executes it as an ELF64 binary.
-fn cmd_run_path(shell: &mut Shell, path_str: &str, _args: &[&str]) {
+/// Argument passing to user programs is not yet implemented.
+fn cmd_run_path(shell: &mut Shell, path_str: &str, args: &[&str]) {
+    let _ = args; // argument passing to ELF programs not yet implemented
     let input = if let Some(rest) = path_str.strip_prefix("./") {
         rest
     } else {
