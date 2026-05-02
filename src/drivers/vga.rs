@@ -151,24 +151,55 @@ impl fmt::Write for Writer {
     }
 }
 
-/// Prints the given formatted string to the VGA text buffer.
+/// Unified kernel print function.
+///
+/// Writes to the UEFI framebuffer when it has been initialised (preferred),
+/// otherwise falls back to the legacy VGA text buffer.  Always also writes to
+/// the serial port so output is visible on headless/QEMU setups.
+///
+/// Both the framebuffer and serial paths use `try_lock` so that recursive
+/// calls from exception/panic handlers do not deadlock.
 #[doc(hidden)]
 pub fn _print(args: fmt::Arguments) {
     use core::fmt::Write;
     use x86_64::instructions::interrupts;
 
     interrupts::without_interrupts(|| {
-        WRITER.lock().write_fmt(args).unwrap();
+        // Framebuffer path (preferred — works on UEFI/real hardware)
+        let fb_written = {
+            let mut used = false;
+            if let Some(mut guard) = crate::drivers::framebuffer::FRAMEBUFFER.try_lock() {
+                if let Some(ref mut w) = *guard {
+                    let _ = w.write_fmt(args);
+                    used = true;
+                }
+            }
+            used
+        };
+
+        // Legacy VGA text buffer fallback (only when framebuffer not ready)
+        if !fb_written {
+            if let Some(mut guard) = WRITER.try_lock() {
+                let _ = guard.write_fmt(args);
+            }
+        }
+
+        // Serial port — always, so headless QEMU / debugging works
+        if let Some(mut guard) = crate::drivers::serial::SERIAL1.try_lock() {
+            let _ = guard.write_fmt(args);
+        }
     });
 }
 
-/// Like the `print!` macro in the standard library, but prints to the VGA text buffer.
+/// Like the `print!` macro in the standard library, but prints to the active
+/// kernel output (framebuffer, serial, or VGA text buffer).
 #[macro_export]
 macro_rules! print {
     ($($arg:tt)*) => ($crate::drivers::vga::_print(format_args!($($arg)*)));
 }
 
-/// Like the `println!` macro in the standard library, but prints to the VGA text buffer.
+/// Like the `println!` macro in the standard library, but prints to the active
+/// kernel output (framebuffer, serial, or VGA text buffer).
 #[macro_export]
 macro_rules! println {
     () => ($crate::print!("\n"));
