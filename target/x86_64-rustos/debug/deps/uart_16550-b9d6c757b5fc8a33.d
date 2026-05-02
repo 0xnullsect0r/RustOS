@@ -1,0 +1,12 @@
+/home/aric/Documents/GitHub/RustOS/target/x86_64-rustos/debug/deps/uart_16550-b9d6c757b5fc8a33.d: /home/aric/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uart_16550-0.6.0/src/lib.rs /home/aric/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uart_16550-0.6.0/src/backend/mod.rs /home/aric/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uart_16550-0.6.0/src/backend/mmio.rs /home/aric/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uart_16550-0.6.0/src/backend/pio.rs /home/aric/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uart_16550-0.6.0/src/spec.rs /home/aric/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uart_16550-0.6.0/src/config.rs /home/aric/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uart_16550-0.6.0/src/error.rs /home/aric/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uart_16550-0.6.0/src/tty.rs
+
+/home/aric/Documents/GitHub/RustOS/target/x86_64-rustos/debug/deps/libuart_16550-b9d6c757b5fc8a33.rmeta: /home/aric/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uart_16550-0.6.0/src/lib.rs /home/aric/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uart_16550-0.6.0/src/backend/mod.rs /home/aric/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uart_16550-0.6.0/src/backend/mmio.rs /home/aric/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uart_16550-0.6.0/src/backend/pio.rs /home/aric/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uart_16550-0.6.0/src/spec.rs /home/aric/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uart_16550-0.6.0/src/config.rs /home/aric/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uart_16550-0.6.0/src/error.rs /home/aric/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uart_16550-0.6.0/src/tty.rs
+
+/home/aric/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uart_16550-0.6.0/src/lib.rs:
+/home/aric/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uart_16550-0.6.0/src/backend/mod.rs:
+/home/aric/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uart_16550-0.6.0/src/backend/mmio.rs:
+/home/aric/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uart_16550-0.6.0/src/backend/pio.rs:
+/home/aric/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uart_16550-0.6.0/src/spec.rs:
+/home/aric/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uart_16550-0.6.0/src/config.rs:
+/home/aric/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uart_16550-0.6.0/src/error.rs:
+/home/aric/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uart_16550-0.6.0/src/tty.rs:
