@@ -177,7 +177,7 @@ if [[ "$PTTYPE" == "gpt" ]]; then
 
     # Give the kernel a brief moment to expose the updated GPT layout.
     sleep "$PARTITION_SYNC_DELAY_SECONDS"
-    
+
     # Use sgdisk to add the new partition for GPT disks
     # -n 2:0:0 means: partition 2, start at next available sector, use all remaining space
     # -t 2:0700 sets the partition type to "Microsoft basic data" (suitable for FAT32)
