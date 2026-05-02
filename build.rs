@@ -18,6 +18,9 @@ fn main() {
     let cargo = env::var("CARGO").unwrap_or_else(|_| String::from("cargo"));
     let status = Command::new(cargo)
         .current_dir(&rsh_dir)
+        .env_remove("RUSTC_WORKSPACE_WRAPPER")
+        .env_remove("RUSTC_WRAPPER")
+        .env_remove("CLIPPY_ARGS")
         .arg("build")
         .arg("--release")
         .status()

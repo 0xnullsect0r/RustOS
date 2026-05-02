@@ -140,10 +140,7 @@ fn sys_exec(path_ptr: *const u8) -> i64 {
             Err(_) => return -2, // -ENOENT
         }
     };
-    match crate::process::exec(&data) {
-        Ok(code) => code,
-        Err(_) => -8, // -ENOEXEC
-    }
+    crate::process::exec(&data).unwrap_or(-8)
 }
 
 unsafe fn cstr_to_str(ptr: *const u8) -> Option<&'static str> {

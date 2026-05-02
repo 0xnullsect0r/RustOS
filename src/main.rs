@@ -112,7 +112,8 @@ fn init_usb_storage() {
 
 fn install_rsh_binary() {
     let rsh = include_bytes!(env!("RSH_ELF_PATH"));
-    let Some(vfs) = rustos::vfs::VFS.lock().as_mut() else {
+    let mut guard = rustos::vfs::VFS.lock();
+    let Some(vfs) = guard.as_mut() else {
         println!("[init] VFS not initialized; cannot install /bin/rsh");
         return;
     };

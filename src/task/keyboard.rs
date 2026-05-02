@@ -16,13 +16,12 @@ use spin::Mutex;
 static SCANCODE_QUEUE: OnceCell<ArrayQueue<u8>> = OnceCell::uninit();
 static WAKER: AtomicWaker = AtomicWaker::new();
 lazy_static! {
-    static ref KEYBOARD_DECODER: Mutex<Keyboard<layouts::Us104Key, ScancodeSet1>> = Mutex::new(
-        Keyboard::new(
+    static ref KEYBOARD_DECODER: Mutex<Keyboard<layouts::Us104Key, ScancodeSet1>> =
+        Mutex::new(Keyboard::new(
             ScancodeSet1::new(),
             layouts::Us104Key,
             HandleControl::Ignore,
-        )
-    );
+        ));
 }
 
 pub fn init() {
