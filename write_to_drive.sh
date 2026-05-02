@@ -12,6 +12,7 @@
 set -euo pipefail
 
 DRIVE=""
+GPT_SYNC_DELAY_SECONDS=1
 
 # ---------------------------------------------------------------------------
 # Argument parsing
@@ -170,7 +171,7 @@ if [[ "$PTTYPE" == "gpt" ]]; then
     fi
 
     # Give the kernel a brief moment to expose the updated GPT layout.
-    sleep 1
+    sleep "$GPT_SYNC_DELAY_SECONDS"
     PART_SPEC='type=0700,name="rustos-storage"'
 else
     PART_SPEC='type=c'
