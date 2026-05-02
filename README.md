@@ -38,6 +38,12 @@ third_party/rsh
 During `cargo build`/`cargo run`, RustOS builds `third_party/rsh` and launches it
 as the init shell (`/bin/rsh`, with an embedded fallback if missing from storage).
 
+Legacy kernel commands are exposed as `/bin/*` executables for `rsh` execution:
+`/bin/help`, `/bin/echo`, `/bin/clear`, `/bin/uname`, `/bin/color`, `/bin/pwd`,
+`/bin/ls`, `/bin/cd`, `/bin/mkdir`, `/bin/rm`, `/bin/cat`, `/bin/write`,
+`/bin/cp`, `/bin/mv`, `/bin/meminfo`, `/bin/mount`, `/bin/exec`, `/bin/usbscan`,
+`/bin/reboot`.
+
 ## USB flash drive workflow
 
 ### Booting + using a data drive
@@ -189,7 +195,13 @@ GitHub Actions will:
 
 ### Writing the release image to a USB drive
 
-Download `rustos-<version>.img` from the [Releases page](../../releases), then:
+Use the local installer script (builds locally, then writes to USB):
+
+```sh
+./write_to_drive.sh --drive /dev/sdX
+```
+
+or write a release image manually:
 
 **Linux / macOS:**
 ```sh

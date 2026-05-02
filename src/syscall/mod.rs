@@ -12,6 +12,8 @@ use x86_64::structures::idt::InterruptStackFrame;
 /// Uses Linux-compatible numbering so rustos-rt programs feel familiar.
 pub const SYS_READ: u64 = 0;
 pub const SYS_WRITE: u64 = 1;
+pub const SYS_OPEN: u64 = 2;
+pub const SYS_CLOSE: u64 = 3;
 pub const SYS_EXEC: u64 = 59;
 pub const SYS_EXIT: u64 = 60;
 const MAX_CSTR_LEN: usize = 4096;
@@ -52,6 +54,8 @@ fn dispatch(nr: u64, a1: u64, a2: u64, a3: u64) {
     let ret = match nr {
         SYS_READ => sys_read(a1, a2 as *mut u8, a3 as usize),
         SYS_WRITE => sys_write(a1, a2 as *const u8, a3 as usize),
+        SYS_OPEN => sys_open(a1 as *const u8),
+        SYS_CLOSE => sys_close(a1 as i64),
         SYS_EXEC => sys_exec(a1 as *const u8),
         SYS_EXIT => {
             sys_exit(a1 as i64);
@@ -59,7 +63,7 @@ fn dispatch(nr: u64, a1: u64, a2: u64, a3: u64) {
         }
         _ => {
             crate::serial_println!("[syscall] unknown nr={}", nr);
-            -38 // -ENOSYS
+            -38 // -ENOSYS (function not implemented)
         }
     };
     unsafe {
@@ -133,6 +137,9 @@ fn sys_exec(path_ptr: *const u8) -> i64 {
     let Some(path) = path else {
         return -22;
     };
+    if let Some(code) = crate::bin_commands::run_virtual_bin_command(&path) {
+        return code;
+    }
     let data = {
         let mut guard = crate::vfs::VFS.lock();
         let Some(vfs) = guard.as_mut() else {
@@ -144,6 +151,29 @@ fn sys_exec(path_ptr: *const u8) -> i64 {
         }
     };
     crate::process::exec(&data).unwrap_or(-8)
+}
+
+fn sys_open(path_ptr: *const u8) -> i64 {
+    if path_ptr.is_null() {
+        return -22; // -EINVAL
+    }
+    let path = cstr_to_string(path_ptr);
+    let Some(path) = path else {
+        return -22;
+    };
+    if crate::bin_commands::is_virtual_bin_path(&path).is_some() {
+        return 3;
+    }
+    let exists = crate::vfs::VFS
+        .lock()
+        .as_mut()
+        .map(|vfs| vfs.exists(&path))
+        .unwrap_or(false);
+    if exists { 3 } else { -2 } // -ENOENT
+}
+
+fn sys_close(_fd: i64) -> i64 {
+    0
 }
 
 fn cstr_to_string(ptr: *const u8) -> Option<String> {

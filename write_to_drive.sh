@@ -1,17 +1,16 @@
 #!/usr/bin/env bash
-# write_to_drive.sh — Download the latest RustOS release image and flash it to a drive.
+# write_to_drive.sh — Build RustOS locally and flash it to a drive.
 #
 # Usage:
 #   ./write_to_drive.sh --drive /dev/sdX
 #
 # Requirements:
-#   - curl or wget
-#   - dd (coreutils)
+#   - cargo + Rust nightly toolchain
+#   - dd (coreutils), lsblk, sfdisk, mkfs.fat
 #   - Root privileges (or write access to the target drive)
 
 set -euo pipefail
 
-REPO="RustOS-Dev/RustOS"
 DRIVE=""
 
 # ---------------------------------------------------------------------------
@@ -30,7 +29,7 @@ while [[ $# -gt 0 ]]; do
         -h|--help)
             echo "Usage: $0 --drive /dev/sdX"
             echo
-            echo "Downloads the latest RustOS UEFI disk image and writes it to the"
+            echo "Builds a local RustOS UEFI disk image and writes it to the"
             echo "specified drive.  The drive will be COMPLETELY OVERWRITTEN."
             echo
             echo "Example:"
@@ -80,18 +79,9 @@ if [[ "$DRIVE" =~ [0-9]$ ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Detect download tool
+# Tool checks
 # ---------------------------------------------------------------------------
-if command -v curl &>/dev/null; then
-    DL_CMD="curl"
-elif command -v wget &>/dev/null; then
-    DL_CMD="wget"
-else
-    echo "Error: neither curl nor wget is available. Please install one." >&2
-    exit 1
-fi
-
-for tool in lsblk sfdisk mkfs.fat; do
+for tool in cargo lsblk sfdisk mkfs.fat find; do
     if ! command -v "$tool" &>/dev/null; then
         echo "Error: required tool '$tool' is not installed." >&2
         exit 1
@@ -99,53 +89,26 @@ for tool in lsblk sfdisk mkfs.fat; do
 done
 
 # ---------------------------------------------------------------------------
-# Fetch latest release metadata from the GitHub API
+# Build local image
 # ---------------------------------------------------------------------------
-API_URL="https://api.github.com/repos/${REPO}/releases/latest"
-echo "Fetching latest release info from ${API_URL} ..."
+SCRIPT_DIR="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")" && pwd)"
+cd "$SCRIPT_DIR"
 
-if [[ "$DL_CMD" == "curl" ]]; then
-    RELEASE_JSON=$(curl -fsSL "$API_URL")
-else
-    RELEASE_JSON=$(wget -qO- "$API_URL")
-fi
+echo "Updating submodules..."
+git submodule update --init --recursive
 
-TAG=$(printf '%s' "$RELEASE_JSON" \
-    | grep -m1 '"tag_name"' \
-    | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/' \
-    | tr -cd 'a-zA-Z0-9._-')
+echo "Building kernel (release)..."
+cargo build --release
 
-DOWNLOAD_URL=$(printf '%s' "$RELEASE_JSON" \
-    | grep '"browser_download_url"' \
-    | grep '\.img"' \
-    | head -1 \
-    | sed 's/.*"browser_download_url": *"\([^"]*\)".*/\1/')
-
-if [[ -z "$TAG" ]]; then
-    echo "Error: could not determine the latest release tag." >&2
+KERNEL_ELF=$(find "$SCRIPT_DIR/target" -path "*/release/rustos" -not -name "*.d" | head -1)
+if [[ -z "$KERNEL_ELF" || ! -f "$KERNEL_ELF" ]]; then
+    echo "Error: failed to locate release kernel ELF after build." >&2
     exit 1
 fi
 
-if [[ -z "$DOWNLOAD_URL" ]]; then
-    echo "Error: no .img asset found in release '${TAG}'." >&2
-    exit 1
-fi
-
-IMG_FILE="rustos-${TAG}.img"
-
-# ---------------------------------------------------------------------------
-# Download
-# ---------------------------------------------------------------------------
-echo "Downloading RustOS ${TAG} ..."
-echo "  URL:  $DOWNLOAD_URL"
-echo "  File: $IMG_FILE"
-echo
-
-if [[ "$DL_CMD" == "curl" ]]; then
-    curl -L --progress-bar -o "$IMG_FILE" "$DOWNLOAD_URL"
-else
-    wget --progress=bar:force:noscroll -O "$IMG_FILE" "$DOWNLOAD_URL"
-fi
+IMG_FILE="$SCRIPT_DIR/rustos-local.img"
+echo "Creating local UEFI disk image: $IMG_FILE"
+(cd "$SCRIPT_DIR/crates/create-image" && cargo run --release -- "$KERNEL_ELF" "$IMG_FILE")
 
 # ---------------------------------------------------------------------------
 # Flash
@@ -168,7 +131,7 @@ else
 fi
 
 echo
-echo "Done! '$DRIVE' is ready to boot RustOS ${TAG} in UEFI mode."
+echo "Done! '$DRIVE' is ready to boot local RustOS build in UEFI mode."
 echo
 echo "Creating storage partition from remaining free space..."
 
@@ -231,5 +194,5 @@ echo "  - Partition 1: RustOS boot partition"
 echo "  - Partition 2: FAT32 storage/root filesystem"
 echo "Remove the drive safely, then boot your system in UEFI mode."
 
-# Clean up the downloaded image
+# Clean up the local image
 rm -f "$IMG_FILE"

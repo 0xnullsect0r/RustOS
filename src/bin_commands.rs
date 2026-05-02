@@ -155,6 +155,7 @@ fn cmd_usbscan() -> i64 {
     0
 }
 
+/// Triggers an immediate system reboot via keyboard controller reset and never returns.
 fn cmd_reboot() -> ! {
     crate::println!("Rebooting...");
     unsafe {
