@@ -27,7 +27,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     use x86_64::VirtAddr;
 
     rustos::init();
-    
+
     // Initialize framebuffer early if available (before println!)
     if let Some(framebuffer) = boot_info.framebuffer.take() {
         rustos::serial_println!("[kernel] Framebuffer available, initializing...");

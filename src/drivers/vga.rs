@@ -167,7 +167,7 @@ pub fn _print(args: fmt::Arguments) {
             WRITER.lock().write_fmt(args).unwrap();
         }
     });
-    
+
     // Always mirror to serial for debugging
     crate::serial_print!("{}", args);
 }

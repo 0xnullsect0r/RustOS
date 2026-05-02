@@ -34,14 +34,30 @@ pub struct Color {
 }
 
 impl Color {
-    pub const WHITE: Color = Color { r: 255, g: 255, b: 255 };
+    pub const WHITE: Color = Color {
+        r: 255,
+        g: 255,
+        b: 255,
+    };
     pub const BLACK: Color = Color { r: 0, g: 0, b: 0 };
-    pub const YELLOW: Color = Color { r: 255, g: 255, b: 0 };
+    pub const YELLOW: Color = Color {
+        r: 255,
+        g: 255,
+        b: 0,
+    };
     pub const RED: Color = Color { r: 255, g: 0, b: 0 };
     pub const GREEN: Color = Color { r: 0, g: 255, b: 0 };
     pub const BLUE: Color = Color { r: 0, g: 0, b: 255 };
-    pub const CYAN: Color = Color { r: 0, g: 255, b: 255 };
-    pub const MAGENTA: Color = Color { r: 255, g: 0, b: 255 };
+    pub const CYAN: Color = Color {
+        r: 0,
+        g: 255,
+        b: 255,
+    };
+    pub const MAGENTA: Color = Color {
+        r: 255,
+        g: 0,
+        b: 255,
+    };
 }
 
 impl FrameBufferWriter {
@@ -54,7 +70,7 @@ impl FrameBufferWriter {
     pub unsafe fn new(framebuffer: FrameBuffer) -> Self {
         let info = framebuffer.info();
         let buffer = framebuffer.into_buffer();
-        
+
         Self {
             framebuffer: buffer,
             info,
@@ -79,7 +95,7 @@ impl FrameBufferWriter {
 
         let pixel_offset = y * self.info.stride + x;
         let byte_offset = pixel_offset * self.info.bytes_per_pixel;
-        
+
         if byte_offset + self.info.bytes_per_pixel > self.framebuffer.len() {
             return;
         }
@@ -90,9 +106,9 @@ impl FrameBufferWriter {
             _ => [color.r, color.g, color.b, 0],
         };
 
-        for i in 0..self.info.bytes_per_pixel.min(4) {
-            self.framebuffer[byte_offset + i] = color_bytes[i];
-        }
+        let len = self.info.bytes_per_pixel.min(4);
+        self.framebuffer[byte_offset..(len + byte_offset)]
+            .copy_from_slice(&color_bytes[..len]);
     }
 
     /// Clears the entire screen with the background color.
@@ -124,7 +140,7 @@ impl FrameBufferWriter {
                 // Read pixel from current line
                 let src_offset = y * self.info.stride + x;
                 let src_byte_offset = src_offset * self.info.bytes_per_pixel;
-                
+
                 let dst_y = y - FONT_HEIGHT;
                 let dst_offset = dst_y * self.info.stride + x;
                 let dst_byte_offset = dst_offset * self.info.bytes_per_pixel;
@@ -134,7 +150,8 @@ impl FrameBufferWriter {
                     if src_byte_offset + i < self.framebuffer.len()
                         && dst_byte_offset + i < self.framebuffer.len()
                     {
-                        self.framebuffer[dst_byte_offset + i] = self.framebuffer[src_byte_offset + i];
+                        self.framebuffer[dst_byte_offset + i] =
+                            self.framebuffer[src_byte_offset + i];
                     }
                 }
             }
@@ -172,7 +189,7 @@ impl FrameBufferWriter {
     /// Draws a single character at the specified character position.
     fn draw_char(&mut self, byte: u8, char_x: usize, char_y: usize) {
         // Only support printable ASCII for now
-        if byte < 32 || byte > 126 {
+        if !(32..=126).contains(&byte) {
             return;
         }
 
@@ -183,7 +200,7 @@ impl FrameBufferWriter {
 
         // Each character is 16 bytes in the font
         let glyph_offset = glyph_index * FONT_HEIGHT;
-        
+
         let pixel_x = char_x * FONT_WIDTH;
         let pixel_y = char_y * FONT_HEIGHT;
 
@@ -191,9 +208,9 @@ impl FrameBufferWriter {
             if glyph_offset + row >= FONT_8X16.len() {
                 break;
             }
-            
+
             let glyph_row = FONT_8X16[glyph_offset + row];
-            
+
             for col in 0..FONT_WIDTH {
                 let bit = (glyph_row >> (7 - col)) & 1;
                 let color = if bit == 1 {
