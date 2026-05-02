@@ -85,9 +85,9 @@ pub fn hlt_loop() -> ! {
 }
 
 #[cfg(test)]
-use bootloader_api::{BootInfo, BootloaderConfig, entry_point};
-#[cfg(test)]
 use bootloader_api::config::Mapping;
+#[cfg(test)]
+use bootloader_api::{BootInfo, BootloaderConfig, entry_point};
 
 #[cfg(test)]
 const BOOTLOADER_CONFIG: BootloaderConfig = {

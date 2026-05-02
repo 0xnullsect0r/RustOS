@@ -10,8 +10,8 @@ use alloc::{boxed::Box, vec::Vec};
 use core::panic::PanicInfo;
 use rustos::allocator::HEAP_SIZE;
 
-use bootloader_api::{BootInfo, BootloaderConfig, entry_point};
 use bootloader_api::config::Mapping;
+use bootloader_api::{BootInfo, BootloaderConfig, entry_point};
 
 const BOOTLOADER_CONFIG: BootloaderConfig = {
     let mut config = BootloaderConfig::new_default();
@@ -34,8 +34,7 @@ fn main(boot_info: &'static mut BootInfo) -> ! {
             .expect("physical memory mapping not configured"),
     );
     let mut mapper = unsafe { memory::init(phys_mem_offset) };
-    let mut frame_allocator =
-        unsafe { BootInfoFrameAllocator::init(&boot_info.memory_regions) };
+    let mut frame_allocator = unsafe { BootInfoFrameAllocator::init(&boot_info.memory_regions) };
     allocator::init_heap(&mut mapper, &mut frame_allocator).expect("heap initialization failed");
 
     test_main();
