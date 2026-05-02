@@ -7,4 +7,4 @@ build-std-features = ["compiler-builtins-mem"]
 target = "x86_64-rustos.json"
 
 [target.'cfg(target_os = "none")']
-runner = "bootimage runner"
+runner = "./run-qemu-uefi.sh"

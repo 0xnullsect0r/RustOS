@@ -6,14 +6,21 @@
 
 extern crate alloc;
 
-use bootloader::{BootInfo, entry_point};
+use bootloader_api::{BootInfo, BootloaderConfig, entry_point};
+use bootloader_api::config::Mapping;
 use core::panic::PanicInfo;
 use rustos::println;
 use rustos::task::{Task, executor::Executor};
 
-entry_point!(kernel_main);
+const BOOTLOADER_CONFIG: BootloaderConfig = {
+    let mut config = BootloaderConfig::new_default();
+    config.mappings.physical_memory = Some(Mapping::Dynamic);
+    config
+};
 
-fn kernel_main(boot_info: &'static BootInfo) -> ! {
+entry_point!(kernel_main, config = &BOOTLOADER_CONFIG);
+
+fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     use core::sync::atomic::Ordering;
     use rustos::allocator;
     use rustos::memory::{self, BootInfoFrameAllocator};
@@ -21,16 +28,27 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     rustos::init();
 
-    let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
+    let phys_mem_offset = VirtAddr::new(
+        boot_info
+            .physical_memory_offset
+            .into_option()
+            .expect("physical memory mapping not configured"),
+    );
 
     // Store globals for use by drivers and process loader
-    memory::PHYS_MEM_OFFSET.store(boot_info.physical_memory_offset, Ordering::Relaxed);
+    memory::PHYS_MEM_OFFSET.store(
+        boot_info
+            .physical_memory_offset
+            .into_option()
+            .unwrap(),
+        Ordering::Relaxed,
+    );
     {
         let mapper = unsafe { memory::init(phys_mem_offset) };
         *memory::GLOBAL_MAPPER.lock() = Some(mapper);
     }
     {
-        let fa = unsafe { BootInfoFrameAllocator::init(&boot_info.memory_map) };
+        let fa = unsafe { BootInfoFrameAllocator::init(&boot_info.memory_regions) };
         *memory::GLOBAL_FRAME_ALLOC.lock() = Some(fa);
     }
 
