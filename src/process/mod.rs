@@ -5,6 +5,12 @@
 //! The process entry point is called as a regular function; it returns when
 //! the program calls `sys_exit` (via `int 0x80`) or when `_start` returns.
 //!
+//! # Process termination
+//! When the process calls `sys_exit`, the kernel's syscall handler invokes
+//! `exit_process()`, which performs a longjmp back to exec().  This is
+//! necessary because the process `_start` diverges after sys_exit — returning
+//! normally from the interrupt would re-enter the process's `loop {}`.
+//!
 //! # Virtual address layout
 //! ```
 //! 0x0040_0000  process code/data segments (from ELF)
@@ -12,6 +18,35 @@
 //! ```
 
 use alloc::string::String;
+use core::sync::atomic::{AtomicU64, Ordering};
+
+/// Saved kernel RSP for longjmp when the running process calls sys_exit.
+///
+/// Points to a slot on the kernel stack (pushed by exec()) that holds the
+/// return address for label `9f` inside exec().  Zero = no process active.
+pub static EXEC_LONGJMP_RSP: AtomicU64 = AtomicU64::new(0);
+
+/// Called by `syscall::sys_exit` to return control to exec().
+///
+/// Restores the kernel stack saved by exec() and jumps to the return label
+/// inside exec(). Does NOT return if a longjmp context is present; returns
+/// `false` if no process is currently running.
+pub fn exit_process() -> bool {
+    let saved_rsp = EXEC_LONGJMP_RSP.swap(0, Ordering::SeqCst);
+    if saved_rsp == 0 {
+        return false;
+    }
+    // Re-enable interrupts (int 0x80 may have cleared IF) and longjmp.
+    unsafe {
+        core::arch::asm!(
+            "sti",
+            "mov rsp, {rsp}",
+            "ret",
+            rsp = in(reg) saved_rsp,
+            options(noreturn),
+        );
+    }
+}
 
 // ---------------------------------------------------------------------------
 // ELF64 constants & structures
@@ -128,23 +163,36 @@ pub fn exec(data: &[u8]) -> Result<i64, String> {
         .map_err(|_| String::from("stack mapping failed"))?;
     let stack_top = STACK_BASE + STACK_SIZE as u64;
 
-    // ---- clear previous exit code -------------------------------------------
+    // ---- clear previous exit code / longjmp context ------------------------
     *crate::syscall::PROCESS_EXIT_CODE.lock() = None;
+    EXEC_LONGJMP_RSP.store(0, Ordering::SeqCst);
 
     // ---- call entry point ---------------------------------------------------
     let entry = hdr.e_entry;
+    let longjmp_ptr = &EXEC_LONGJMP_RSP as *const AtomicU64 as usize;
     unsafe {
         core::arch::asm!(
-            // Switch to process stack, push fake return address (0), call entry
-            "mov r15, rsp",         // save kernel rsp
-            "mov rsp, {stack}",     // switch to process stack
-            "push 0",               // fake return address
-            "call {entry}",         // call ELF entry (_start)
-            "mov rsp, r15",         // restore kernel rsp
+            // Save kernel rsp in r15 (callee-saved; survives the call).
+            "mov r15, rsp",
+            // Push the address of label 9 onto the kernel stack, then save
+            // that rsp as the longjmp target.  sys_exit will do:
+            //   mov rsp, saved_rsp ; ret  → pops label9 addr → jumps to 9:
+            "lea rax, [rip + 9f]",
+            "push rax",
+            "mov qword ptr [{ptr}], rsp",
+            // Switch to process stack and call entry.
+            "mov rsp, {stack}",
+            "push 0",               // fake return address for _start
+            "call {entry}",
+            // Label 9: reached via (a) _start returning naturally or
+            //          (b) sys_exit longjmp.  Restore kernel rsp either way.
+            "9:",
+            "mov rsp, r15",
+            ptr   = in(reg) longjmp_ptr,
             stack = in(reg) stack_top,
             entry = in(reg) entry,
-            // r15 is callee-saved so it survives the call
             out("r15") _,
+            out("rax") _,
             options(nostack),
         );
     }

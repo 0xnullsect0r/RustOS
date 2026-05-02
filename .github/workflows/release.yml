@@ -14,8 +14,8 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build-iso:
-    name: Build Bootable ISO
+  build-image:
+    name: Build Bootable Disk Image
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -41,32 +41,14 @@ jobs:
       - name: Install bootimage
         run: cargo install bootimage
 
-      - name: Install ISO build tools
-        run: sudo apt-get update && sudo apt-get install -y xorriso grub-pc-bin grub-common
-
       - name: Build kernel with bootimage
         run: cargo bootimage --release
 
-      - name: Determine binary name
+      - name: Locate disk image
         id: bins
         run: |
           BIN=$(find target -name "bootimage-rustos.bin" | head -1)
           echo "bin=$BIN" >> "$GITHUB_OUTPUT"
-
-      - name: Create ISO directory structure
-        run: |
-          mkdir -p iso_root/boot
-          cp "${{ steps.bins.outputs.bin }}" iso_root/boot/rustos.bin
-
-      - name: Build El Torito bootable ISO with xorriso
-        run: |
-          xorriso -as mkisofs \
-            -b boot/rustos.bin \
-            -no-emul-boot \
-            -boot-load-size 4 \
-            -boot-info-table \
-            -o rustos.iso \
-            iso_root/
 
       - name: Determine release tag
         id: tag
@@ -77,14 +59,14 @@ jobs:
             echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Rename ISO with version
-        run: mv rustos.iso rustos-${{ steps.tag.outputs.tag }}.iso
+      - name: Rename image with version
+        run: cp "${{ steps.bins.outputs.bin }}" rustos-${{ steps.tag.outputs.tag }}.img
 
-      - name: Upload ISO artifact
+      - name: Upload disk image artifact
         uses: actions/upload-artifact@v4
         with:
-          name: rustos-iso
-          path: rustos-${{ steps.tag.outputs.tag }}.iso
+          name: rustos-img
+          path: rustos-${{ steps.tag.outputs.tag }}.img
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -95,25 +77,39 @@ jobs:
             ## RustOS ${{ steps.tag.outputs.tag }}
 
             ### Download
-            - **`rustos-${{ steps.tag.outputs.tag }}.iso`** — bootable ISO image (BIOS, El Torito)
+            - **`rustos-${{ steps.tag.outputs.tag }}.img`** — raw x86_64 disk image (BIOS bootloader)
 
-            ### Running
-            **QEMU:**
+            ### Booting from USB (recommended)
+
+            Write the image directly to a USB drive — this is the most reliable method:
+
+            **Linux / macOS:**
             ```bash
-            qemu-system-x86_64 -cdrom rustos-${{ steps.tag.outputs.tag }}.iso
+            sudo dd if=rustos-${{ steps.tag.outputs.tag }}.img of=/dev/sdX bs=4M status=progress && sync
             ```
+            Replace `/dev/sdX` with your USB device (e.g. `/dev/sdb`). **Do NOT use a partition** (e.g. `/dev/sdb1`).
 
-            **Write to USB (Linux):**
+            **Windows (Rufus):** Open Rufus, select the `.img` file, choose "DD image" mode.
+
+            Then boot your PC from that USB drive. In your BIOS/UEFI settings, enable **Legacy/CSM boot** or **BIOS compatibility mode** (this kernel uses a BIOS bootloader; UEFI-only systems require CSM).
+
+            ### Testing in QEMU
             ```bash
-            sudo dd if=rustos-${{ steps.tag.outputs.tag }}.iso of=/dev/sdX bs=4M status=progress
+            qemu-system-x86_64 \
+              -drive format=raw,file=rustos-${{ steps.tag.outputs.tag }}.img \
+              -device qemu-xhci,id=xhci \
+              -drive if=none,id=usbdisk,file=YOUR_FAT32_DISK.img,format=raw \
+              -device usb-storage,bus=xhci.0,drive=usbdisk \
+              -serial stdio
             ```
 
             ### What's in this release
-            - Interactive shell with VFS (ls, cd, mkdir, rm, cat, write, cp, mv, ...)
-            - VGA text mode output
-            - Async/await task executor
-            - x86_64 interrupt handling (IDT, GDT, PIC)
-            - Heap allocator
-          files: rustos-${{ steps.tag.outputs.tag }}.iso
+            - Interactive shell (`help`, `ls`, `cd`, `cat`, `write`, `cp`, `mv`, `exec`, `usbscan`, …)
+            - ELF64 process loader — run programs from USB with `exec /usb/yourprogram`
+            - USB mass storage (XHCI) — plug in a USB drive and run `usbscan` to mount it at `/usb`
+            - FAT32 read support for USB drives
+            - VGA text mode, async keyboard input
+            - Heap allocator, interrupt handling (IDT/GDT/PIC)
+          files: rustos-${{ steps.tag.outputs.tag }}.img
           draft: false
           prerelease: ${{ contains(steps.tag.outputs.tag, '-') }}

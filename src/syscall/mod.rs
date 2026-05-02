@@ -7,10 +7,11 @@
 
 use x86_64::structures::idt::InterruptStackFrame;
 
-/// Syscall numbers
-pub const SYS_EXIT: u64 = 0;
+/// Syscall numbers — must match rustos-rt/src/lib.rs.
+/// Uses Linux-compatible numbering so rustos-rt programs feel familiar.
+pub const SYS_READ: u64 = 0;
 pub const SYS_WRITE: u64 = 1;
-pub const SYS_READ: u64 = 2;
+pub const SYS_EXIT: u64 = 60;
 
 /// File descriptors
 pub const FD_STDIN: u64 = 0;
@@ -46,13 +47,13 @@ pub extern "x86-interrupt" fn syscall_handler(_stack_frame: InterruptStackFrame)
 
 fn dispatch(nr: u64, a1: u64, a2: u64, a3: u64) {
     match nr {
-        SYS_EXIT => sys_exit(a1 as i64),
-        SYS_WRITE => {
-            sys_write(a1, a2 as *const u8, a3 as usize);
-        }
         SYS_READ => {
             sys_read(a1, a2 as *mut u8, a3 as usize);
         }
+        SYS_WRITE => {
+            sys_write(a1, a2 as *const u8, a3 as usize);
+        }
+        SYS_EXIT => sys_exit(a1 as i64),
         _ => {
             crate::serial_println!("[syscall] unknown nr={}", nr);
         }
@@ -62,8 +63,10 @@ fn dispatch(nr: u64, a1: u64, a2: u64, a3: u64) {
 fn sys_exit(code: i64) {
     crate::println!("\n[process exited with code {}]", code);
     *PROCESS_EXIT_CODE.lock() = Some(code);
-    // Execution returns to the interrupt handler, which returns to the call
-    // site in process::exec() — the process stack frame unwinds naturally.
+    // Longjmp back to exec() — does not return if a process is active.
+    if !crate::process::exit_process() {
+        crate::serial_println!("[syscall] sys_exit with no active process context");
+    }
 }
 
 fn sys_write(fd: u64, buf: *const u8, len: usize) {
