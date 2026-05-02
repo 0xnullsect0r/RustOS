@@ -106,7 +106,11 @@ fn init_usb_storage() {
         return;
     }
 
-    // Mount all found devices (device 0 → /usb, device 1 → /usb1, …).
+    if !rustos::usb::mount_boot_storage_root() {
+        rustos::serial_println!("[usb] no boot storage partition mounted as root");
+    }
+
+    // Mount all found devices under /usb* (device 0 → /usb, device 1 → /usb1, …).
     rustos::usb::mount_storage_devices(0);
 }
 
@@ -131,20 +135,25 @@ fn install_rsh_binary() {
 
 /// Launches `/bin/rsh` as the init shell process and restarts it on exit.
 fn launch_rsh() -> ! {
+    let embedded_rsh = include_bytes!(env!("RSH_ELF_PATH"));
     println!("RustOS v{} — launching /bin/rsh", env!("CARGO_PKG_VERSION"));
     loop {
-        let data = {
+        let from_vfs = {
             let mut guard = rustos::vfs::VFS.lock();
             let Some(vfs) = guard.as_mut() else {
                 println!("[init] VFS not initialized");
                 rustos::hlt_loop();
             };
-            match vfs.read_file("/bin/rsh") {
-                Ok(d) => d,
-                Err(e) => {
-                    println!("[init] /bin/rsh missing: {}", e);
-                    rustos::hlt_loop();
-                }
+            vfs.read_file("/bin/rsh")
+        };
+        let data = match from_vfs {
+            Ok(d) => d,
+            Err(e) => {
+                println!(
+                    "[init] /bin/rsh missing in filesystem ({}), using embedded fallback",
+                    e
+                );
+                embedded_rsh.to_vec()
             }
         };
         match rustos::process::exec(&data) {

@@ -16,8 +16,7 @@ XHCI USB driver, FAT32 filesystem, ELF process loader, and a userspace shell env
 - **Memory paging** + **heap allocator** (fixed-size block allocator)
 - **Async executor** — keyboard input handled via `async/await`
 - **Userspace shell (`rsh`)** launched from `/bin/rsh` at boot
-- **VFS with mount table** — RamFs (root `/`) + FAT32 mounts side-by-side
-- **In-memory RAM filesystem** — create, read, write, copy, move, delete files and directories
+- **VFS with mount table** — FAT32 storage partition as root `/` + additional FAT32 mounts
 - **PCI enumeration** — finds XHCI host controllers on the PCI bus
 - **XHCI USB 3.x driver** — full controller init, port enumeration, control + bulk transfers
 - **USB Mass Storage (BOT/SCSI)** — reads sectors from USB flash drives
@@ -36,8 +35,8 @@ The repository is included as a git submodule at:
 third_party/rsh
 ```
 
-During `cargo build`/`cargo run`, RustOS builds `third_party/rsh` and installs
-the resulting ELF into the VFS as `/bin/rsh`, then launches it as the init shell.
+During `cargo build`/`cargo run`, RustOS builds `third_party/rsh` and launches it
+as the init shell (`/bin/rsh`, with an embedded fallback if missing from storage).
 
 ## USB flash drive workflow
 
@@ -45,14 +44,15 @@ the resulting ELF into the VFS as `/bin/rsh`, then launches it as the init shell
 
 ```
 # Boot RustOS from a USB stick.
-# The boot drive is automatically enumerated and mounted at /usb.
+# The boot drive's partition 2 is mounted as root filesystem (/).
+# Partition 1 is mounted at /usb.
 
 # Plug in a second USB drive with your files, then in the shell:
 usbscan               # detects the new drive, mounts it at /usb1
 
 ls /usb1              # browse the FAT32 volume
 cat /usb1/readme.txt  # read a file
-cp /usb1/hello /hello # copy to the in-memory filesystem
+cp /usb1/hello /hello # copy to root filesystem
 exec /hello           # run an ELF binary
 ```
 
@@ -171,8 +171,8 @@ sudo dd if=target/x86_64-rustos/debug/bootimage-rustos.bin of=/dev/sdX bs=4M sta
 ```
 
 > **Note:** After writing, `lsblk` will show your USB drive with **no partitions** — this is
-> expected. The raw BIOS bootimage has no partition table; the MBR bootloader occupies the first
-> sector directly. The image is also small (~364 KB); the rest of the drive is unused blank space.
+> outdated for the release installer script. `write_to_drive.sh` now creates a second FAT32
+> storage partition that occupies the remaining disk space and is used as root (`/`) in RustOS.
 
 ## Releases
 
@@ -198,8 +198,9 @@ sudo dd if=rustos-v0.1.0.img of=/dev/sdX bs=4M status=progress && sync
 Replace `/dev/sdX` with your USB device (e.g. `/dev/sdb`). **Do NOT use a partition**
 (e.g. `/dev/sdb1`) — write to the whole device.
 
-After `dd` finishes, `lsblk` will show the USB drive with **no partitions listed**. That is
-normal — the bootimage does not use a partition table.
+After `write_to_drive.sh` finishes, `lsblk` will show:
+- partition 1 (boot/EFI)
+- partition 2 (`RUSTOS_ROOT`, FAT32 storage/root filesystem)
 
 **Windows (Rufus):** Select the `.img` file and choose **"DD Image"** write mode.
 

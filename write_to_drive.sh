@@ -11,7 +11,7 @@
 
 set -euo pipefail
 
-REPO="0xnullsect0r/RustOS"
+REPO="RustOS-Dev/RustOS"
 DRIVE=""
 
 # ---------------------------------------------------------------------------
@@ -91,6 +91,13 @@ else
     exit 1
 fi
 
+for tool in lsblk sfdisk mkfs.fat; do
+    if ! command -v "$tool" &>/dev/null; then
+        echo "Error: required tool '$tool' is not installed." >&2
+        exit 1
+    fi
+done
+
 # ---------------------------------------------------------------------------
 # Fetch latest release metadata from the GitHub API
 # ---------------------------------------------------------------------------
@@ -162,7 +169,67 @@ fi
 
 echo
 echo "Done! '$DRIVE' is ready to boot RustOS ${TAG} in UEFI mode."
-echo "Remove the drive safely, then boot your system from it."
+echo
+echo "Creating storage partition from remaining free space..."
+
+if command -v sudo &>/dev/null && [[ "$(id -u)" -ne 0 ]]; then
+    sudo blockdev --rereadpt "$DRIVE" || true
+    sudo partprobe "$DRIVE" || true
+else
+    blockdev --rereadpt "$DRIVE" || true
+    partprobe "$DRIVE" || true
+fi
+
+sleep 1
+
+PTTYPE=$(lsblk -dn -o PTTYPE "$DRIVE" | tr -d '[:space:]')
+if [[ -z "$PTTYPE" ]]; then
+    echo "Error: could not detect partition table type on '$DRIVE' after flashing." >&2
+    exit 1
+fi
+
+if [[ "$PTTYPE" == "gpt" ]]; then
+    PART_SPEC='type=0700,name="rustos-storage"'
+else
+    PART_SPEC='type=c'
+fi
+
+if command -v sudo &>/dev/null && [[ "$(id -u)" -ne 0 ]]; then
+    printf '%s\n' "$PART_SPEC" | sudo sfdisk --append "$DRIVE"
+else
+    printf '%s\n' "$PART_SPEC" | sfdisk --append "$DRIVE"
+fi
+
+if [[ "$DRIVE" =~ [0-9]$ ]]; then
+    STORAGE_PART="${DRIVE}p2"
+else
+    STORAGE_PART="${DRIVE}2"
+fi
+
+for _ in $(seq 1 20); do
+    if [[ -b "$STORAGE_PART" ]]; then
+        break
+    fi
+    sleep 0.2
+done
+
+if [[ ! -b "$STORAGE_PART" ]]; then
+    echo "Error: storage partition device '$STORAGE_PART' was not created." >&2
+    exit 1
+fi
+
+echo "Formatting ${STORAGE_PART} as FAT32 (label: RUSTOS_ROOT)..."
+if command -v sudo &>/dev/null && [[ "$(id -u)" -ne 0 ]]; then
+    sudo mkfs.fat -F 32 -n RUSTOS_ROOT "$STORAGE_PART"
+else
+    mkfs.fat -F 32 -n RUSTOS_ROOT "$STORAGE_PART"
+fi
+
+echo
+echo "Done! '$DRIVE' is ready:"
+echo "  - Partition 1: RustOS boot partition"
+echo "  - Partition 2: FAT32 storage/root filesystem"
+echo "Remove the drive safely, then boot your system in UEFI mode."
 
 # Clean up the downloaded image
 rm -f "$IMG_FILE"
