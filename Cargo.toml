@@ -55,3 +55,14 @@ test-args = [
     "none",
 ]
 test-success-exit-code = 33 # (0x10 << 1) | 1
+
+run-args = [
+    "-serial",
+    "stdio",
+    "-device",
+    "qemu-xhci,id=xhci",
+    "-drive",
+    "if=none,id=usbdisk,file=disk.img,format=raw",
+    "-device",
+    "usb-storage,bus=xhci.0,drive=usbdisk",
+]

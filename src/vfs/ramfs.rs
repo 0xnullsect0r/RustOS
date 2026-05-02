@@ -158,6 +158,23 @@ impl RamFs {
         self.write_file(&abs_dst, &data)
     }
 
+    /// Returns true if `path` is an existing directory.
+    pub fn is_dir(&self, path: &str) -> bool {
+        let abs = self.resolve(path);
+        matches!(self.get_node(&abs), Ok(Node::Directory(_)))
+    }
+
+    /// Returns true if `path` exists (file or directory).
+    pub fn exists(&self, path: &str) -> bool {
+        let abs = self.resolve(path);
+        self.get_node(&abs).is_ok()
+    }
+
+    /// Public wrapper around `normalize_path` for use outside this module.
+    pub fn pub_normalize(path: &str) -> String {
+        normalize_path(path)
+    }
+
     // ---- internal helpers ----
 
     fn resolve(&self, path: &str) -> String {

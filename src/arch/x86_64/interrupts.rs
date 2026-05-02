@@ -39,6 +39,8 @@ lazy_static! {
         }
         idt[InterruptIndex::Timer.as_usize()].set_handler_fn(timer_interrupt_handler);
         idt[InterruptIndex::Keyboard.as_usize()].set_handler_fn(keyboard_interrupt_handler);
+        // int 0x80 — syscall gate used by processes running on RustOS
+        idt[0x80].set_handler_fn(crate::syscall::syscall_handler);
         idt
     };
 }

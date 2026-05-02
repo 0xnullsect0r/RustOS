@@ -1,6 +1,7 @@
 //! Built-in shell command implementations.
 
 use crate::drivers::vga::Color;
+use crate::vfs::{VFS, NodeType};
 use super::Shell;
 
 /// Dispatch a parsed command name and argument list to the appropriate handler.
@@ -21,6 +22,8 @@ pub fn dispatch(shell: &mut Shell, cmd: &str, args: &[&str]) {
         "cp"      => cmd_cp(shell, args),
         "mv"      => cmd_mv(shell, args),
         "meminfo" => cmd_meminfo(),
+        "mount"   => cmd_mount(),
+        "exec"    => cmd_exec(shell, args),
         "reboot"  => cmd_reboot(),
         other     => crate::println!("unknown command: '{}'. Type 'help' for a list.", other),
     }
@@ -43,6 +46,8 @@ fn cmd_help() {
     crate::println!("  cp <src> <dst>    - Copy a file");
     crate::println!("  mv <src> <dst>    - Move or rename a file/directory");
     crate::println!("  meminfo           - Show heap memory information");
+    crate::println!("  mount             - Show mounted filesystems");
+    crate::println!("  exec <path>       - Execute an ELF binary from the VFS");
     crate::println!("  reboot            - Reboot the system");
 }
 
@@ -91,17 +96,11 @@ fn cmd_color(shell: &mut Shell, args: &[&str]) {
     }
     let fg = match parse_color(args[0]) {
         Some(c) => c,
-        None => {
-            crate::println!("Unknown color: '{}'", args[0]);
-            return;
-        }
+        None => { crate::println!("Unknown color: '{}'", args[0]); return; }
     };
     let bg = match parse_color(args[1]) {
         Some(c) => c,
-        None => {
-            crate::println!("Unknown color: '{}'", args[1]);
-            return;
-        }
+        None => { crate::println!("Unknown color: '{}'", args[1]); return; }
     };
     shell.fg_color = fg;
     shell.bg_color = bg;
@@ -109,72 +108,85 @@ fn cmd_color(shell: &mut Shell, args: &[&str]) {
 }
 
 fn cmd_pwd(shell: &Shell) {
-    crate::println!("{}", shell.fs.cwd());
+    crate::println!("{}", shell.cwd);
 }
 
 fn cmd_ls(shell: &mut Shell, args: &[&str]) {
-    let path = args.first().copied().unwrap_or("");
-    match shell.fs.list_dir(path) {
-        Ok(mut entries) => {
+    let input = args.first().copied().unwrap_or("");
+    let path = shell.resolve_path(input);
+    let result = VFS.lock().as_mut().and_then(|vfs| vfs.list_dir(&path).ok());
+    match result {
+        Some(mut entries) => {
             entries.sort_by(|a, b| a.name.cmp(&b.name));
             for e in &entries {
                 match e.node_type {
-                    crate::vfs::NodeType::Directory => crate::println!("{}/", e.name),
-                    crate::vfs::NodeType::File => crate::println!("{}", e.name),
+                    NodeType::Directory => crate::println!("{}/", e.name),
+                    NodeType::File      => crate::println!("{}", e.name),
                 }
             }
         }
-        Err(e) => crate::println!("ls: {}", e),
+        None => crate::println!("ls: {}: not found or error", path),
     }
 }
 
 fn cmd_cd(shell: &mut Shell, args: &[&str]) {
-    let path = args.first().copied().unwrap_or("/");
-    if let Err(e) = shell.fs.cd(path) {
-        crate::println!("cd: {}", e);
+    let input = args.first().copied().unwrap_or("/");
+    let path = shell.resolve_path(input);
+    let is_dir = VFS.lock().as_mut().map(|vfs| vfs.is_dir(&path)).unwrap_or(false);
+    if is_dir {
+        shell.cwd = path;
+    } else {
+        crate::println!("cd: {}: not a directory", path);
     }
 }
 
 fn cmd_mkdir(shell: &mut Shell, args: &[&str]) {
-    let Some(&path) = args.first() else {
+    let Some(&input) = args.first() else {
         crate::println!("Usage: mkdir <path>");
         return;
     };
-    if let Err(e) = shell.fs.mkdir(path) {
-        crate::println!("mkdir: {}", e);
+    let path = shell.resolve_path(input);
+    let result = VFS.lock().as_mut().map(|vfs| vfs.mkdir(&path));
+    match result {
+        Some(Ok(())) => {}
+        Some(Err(e)) => crate::println!("mkdir: {}", e),
+        None => crate::println!("mkdir: VFS not initialised"),
     }
 }
 
 fn cmd_rm(shell: &mut Shell, args: &[&str]) {
-    let Some(&path) = args.first() else {
+    let Some(&input) = args.first() else {
         crate::println!("Usage: rm <path>");
         return;
     };
-    if let Err(e) = shell.fs.remove(path) {
-        crate::println!("rm: {}", e);
+    let path = shell.resolve_path(input);
+    let result = VFS.lock().as_mut().map(|vfs| vfs.remove(&path));
+    match result {
+        Some(Ok(())) => {}
+        Some(Err(e)) => crate::println!("rm: {}", e),
+        None => crate::println!("rm: VFS not initialised"),
     }
 }
 
 fn cmd_cat(shell: &mut Shell, args: &[&str]) {
-    let Some(&path) = args.first() else {
+    let Some(&input) = args.first() else {
         crate::println!("Usage: cat <path>");
         return;
     };
-    match shell.fs.read_file(path) {
-        Ok(data) => match core::str::from_utf8(&data) {
+    let path = shell.resolve_path(input);
+    let result = VFS.lock().as_mut().and_then(|vfs| vfs.read_file(&path).ok());
+    match result {
+        Some(data) => match core::str::from_utf8(&data) {
             Ok(s) => crate::println!("{}", s),
             Err(_) => {
                 for &b in &data {
-                    if b.is_ascii() {
-                        crate::print!("{}", b as char);
-                    } else {
-                        crate::print!("?");
-                    }
+                    if b.is_ascii() { crate::print!("{}", b as char); }
+                    else { crate::print!("?"); }
                 }
                 crate::println!();
             }
         },
-        Err(e) => crate::println!("cat: {}", e),
+        None => crate::println!("cat: {}: not found or error", path),
     }
 }
 
@@ -183,10 +195,13 @@ fn cmd_write(shell: &mut Shell, args: &[&str]) {
         crate::println!("Usage: write <path> <text>");
         return;
     }
-    let path = args[0];
+    let path = shell.resolve_path(args[0]);
     let text = args[1..].join(" ");
-    if let Err(e) = shell.fs.write_file(path, text.as_bytes()) {
-        crate::println!("write: {}", e);
+    let result = VFS.lock().as_mut().map(|vfs| vfs.write_file(&path, text.as_bytes()));
+    match result {
+        Some(Ok(())) => {}
+        Some(Err(e)) => crate::println!("write: {}", e),
+        None => crate::println!("write: VFS not initialised"),
     }
 }
 
@@ -195,8 +210,13 @@ fn cmd_cp(shell: &mut Shell, args: &[&str]) {
         crate::println!("Usage: cp <src> <dst>");
         return;
     }
-    if let Err(e) = shell.fs.copy(args[0], args[1]) {
-        crate::println!("cp: {}", e);
+    let src = shell.resolve_path(args[0]);
+    let dst = shell.resolve_path(args[1]);
+    let result = VFS.lock().as_mut().map(|vfs| vfs.copy(&src, &dst));
+    match result {
+        Some(Ok(())) => {}
+        Some(Err(e)) => crate::println!("cp: {}", e),
+        None => crate::println!("cp: VFS not initialised"),
     }
 }
 
@@ -205,8 +225,13 @@ fn cmd_mv(shell: &mut Shell, args: &[&str]) {
         crate::println!("Usage: mv <src> <dst>");
         return;
     }
-    if let Err(e) = shell.fs.rename(args[0], args[1]) {
-        crate::println!("mv: {}", e);
+    let src = shell.resolve_path(args[0]);
+    let dst = shell.resolve_path(args[1]);
+    let result = VFS.lock().as_mut().map(|vfs| vfs.rename(&src, &dst));
+    match result {
+        Some(Ok(())) => {}
+        Some(Err(e)) => crate::println!("mv: {}", e),
+        None => crate::println!("mv: VFS not initialised"),
     }
 }
 
@@ -218,11 +243,42 @@ fn cmd_meminfo() {
     );
 }
 
+fn cmd_mount() {
+    let mounts = VFS.lock().as_ref().map(|vfs| vfs.list_mounts());
+    match mounts {
+        Some(m) if !m.is_empty() => {
+            crate::println!("/  (ramfs)");
+            for mp in &m {
+                crate::println!("{}  (fat32)", mp);
+            }
+        }
+        _ => crate::println!("/  (ramfs)  [no additional mounts]"),
+    }
+}
+
+fn cmd_exec(shell: &mut Shell, args: &[&str]) {
+    let Some(&input) = args.first() else {
+        crate::println!("Usage: exec <path>");
+        return;
+    };
+    let path = shell.resolve_path(input);
+    let data = {
+        let result = VFS.lock().as_mut().and_then(|vfs| vfs.read_file(&path).ok());
+        match result {
+            Some(d) => d,
+            None => { crate::println!("exec: {}: not found", path); return; }
+        }
+    };
+    match crate::process::exec(&data) {
+        Ok(code)  => crate::println!("exec: process exited with code {}", code),
+        Err(e)    => crate::println!("exec: load error: {}", e),
+    }
+}
+
 fn cmd_reboot() {
     crate::println!("Rebooting...");
     unsafe {
         x86_64::instructions::interrupts::disable();
-        // Pulse the keyboard controller reset line to trigger a system reset
         let mut port: x86_64::instructions::port::Port<u8> =
             x86_64::instructions::port::Port::new(0x64);
         port.write(0xFE_u8);

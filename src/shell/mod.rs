@@ -2,13 +2,12 @@
 
 pub mod commands;
 
-use alloc::{string::String, vec::Vec};
+use alloc::string::String;
 use crate::drivers::vga::Color;
-use crate::vfs::RamFs;
 
-/// The interactive shell state: VFS instance, input line buffer, and current colors.
+/// The interactive shell state: current directory, input line buffer, and current colors.
 pub struct Shell {
-    pub fs: RamFs,
+    pub cwd: String,
     input_buf: String,
     pub fg_color: Color,
     pub bg_color: Color,
@@ -17,7 +16,7 @@ pub struct Shell {
 impl Shell {
     pub fn new() -> Self {
         Shell {
-            fs: RamFs::new(),
+            cwd: String::from("/"),
             input_buf: String::new(),
             fg_color: Color::Yellow,
             bg_color: Color::Black,
@@ -50,7 +49,23 @@ impl Shell {
 
     /// Print the shell prompt, including the current working directory.
     pub fn print_prompt(&self) {
-        crate::print!("rustos:{}> ", self.fs.cwd());
+        crate::print!("rustos:{}> ", self.cwd);
+    }
+
+    /// Resolve a path relative to the shell's current working directory.
+    pub fn resolve_path(&self, path: &str) -> String {
+        if path.starts_with('/') {
+            crate::vfs::RamFs::pub_normalize(path)
+        } else if path.is_empty() || path == "." {
+            self.cwd.clone()
+        } else {
+            let base = if self.cwd == "/" {
+                String::from("/")
+            } else {
+                alloc::format!("{}/", self.cwd)
+            };
+            crate::vfs::RamFs::pub_normalize(&alloc::format!("{}{}", base, path))
+        }
     }
 
     fn execute(&mut self, line: &str) {
@@ -58,12 +73,11 @@ impl Shell {
         if line.is_empty() {
             return;
         }
-        // Split into command and remaining args string
         let (cmd, rest) = match line.find(' ') {
             Some(pos) => (&line[..pos], line[pos + 1..].trim()),
             None => (line, ""),
         };
-        let args: Vec<&str> = rest.split_whitespace().collect();
+        let args: alloc::vec::Vec<&str> = rest.split_whitespace().collect();
         commands::dispatch(self, cmd, &args);
     }
 }
