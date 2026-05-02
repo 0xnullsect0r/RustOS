@@ -27,7 +27,12 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     use x86_64::VirtAddr;
 
     // Force early initialization of serial port (before enabling interrupts)
-    // This prevents deadlock if an interrupt fires during lazy_static init
+    // The serial port uses lazy_static, which initializes on first access.
+    // If initialization happens AFTER interrupts are enabled, and an interrupt
+    // fires during the lazy_static setup (before the Mutex is fully initialized),
+    // the interrupt handler might try to acquire the partially-initialized Mutex,
+    // causing a deadlock or undefined behavior. By forcing initialization here
+    // while interrupts are still disabled, we ensure thread-safe access later.
     rustos::serial_println!("[kernel] Serial initialized");
 
     rustos::init();
