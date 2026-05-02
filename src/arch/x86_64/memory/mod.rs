@@ -93,6 +93,8 @@ pub fn map_mmio_region(phys_base: u64, size: usize) -> u64 {
 /// Map a set of virtual pages for a user process segment.
 /// `virt_base` must be page-aligned; `size` is rounded up to the next page.
 pub fn map_user_segment(virt_base: u64, size: usize) -> Result<(), MapToError<Size4KiB>> {
+    use crate::serial_println;
+    
     let num_pages = size.div_ceil(4096);
     let mut mapper_guard = GLOBAL_MAPPER.lock();
     let mapper = mapper_guard
@@ -113,9 +115,13 @@ pub fn map_user_segment(virt_base: u64, size: usize) -> Result<(), MapToError<Si
             .ok_or(MapToError::FrameAllocationFailed)?;
         let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
         unsafe {
-            mapper
-                .map_to(page, frame, flags, &mut GlobalFrameAllocatorRef)?
-                .flush()
+            match mapper.map_to(page, frame, flags, &mut GlobalFrameAllocatorRef) {
+                Ok(flusher) => flusher.flush(),
+                Err(e) => {
+                    serial_println!("[memory] Failed to map page at 0x{:x}: {:?}", virt.as_u64(), e);
+                    return Err(e);
+                }
+            }
         };
     }
     Ok(())

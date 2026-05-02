@@ -132,7 +132,7 @@ pub fn exec(data: &[u8]) -> Result<i64, String> {
         let size = (page_end - page_start) as usize;
 
         crate::memory::map_user_segment(page_start, size)
-            .map_err(|_| String::from("segment mapping failed"))?;
+            .map_err(|_| String::from("segment mapping failed (see serial for details)"))?;
 
         // Copy file data into the freshly mapped virtual memory
         let file_start = ph.p_offset as usize;
@@ -160,7 +160,7 @@ pub fn exec(data: &[u8]) -> Result<i64, String> {
 
     // ---- set up stack -------------------------------------------------------
     crate::memory::map_user_segment(STACK_BASE, STACK_SIZE)
-        .map_err(|_| String::from("stack mapping failed"))?;
+        .map_err(|_| String::from("stack mapping failed (see serial for details)"))?;
     let stack_top = STACK_BASE + STACK_SIZE as u64;
 
     // ---- clear previous exit code / longjmp context ------------------------

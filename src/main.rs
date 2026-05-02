@@ -162,6 +162,8 @@ fn launch_rsh() -> ! {
     println!("RustOS v{} — launching /bin/rsh", env!("CARGO_PKG_VERSION"));
     
     const MAX_CONSECUTIVE_FAILURES: usize = 10;
+    // Approximate delay: ~10-20ms on modern CPUs, prevents tight loop resource exhaustion
+    const RETRY_DELAY_ITERATIONS: usize = 10_000_000;
     let mut consecutive_failures = 0;
     
     loop {
@@ -191,12 +193,12 @@ fn launch_rsh() -> ! {
             Err(e) => {
                 println!("[init] /bin/rsh failed to start: {}", e);
                 
-                // If segment mapping fails, don't retry - it indicates a critical error
-                // that won't be fixed by retrying (e.g., out of memory, addresses already mapped)
+                // Mapping failures indicate critical errors that won't be fixed by retrying
+                // (out of memory, corrupted ELF, or page table issues)
                 if e.contains("mapping failed") {
-                    println!("[init] Segment or stack mapping failure indicates a critical system error");
-                    println!("[init] Cannot retry as page tables may be in an inconsistent state");
-                    println!("[init] Halting system");
+                    println!("[init] Memory mapping failure indicates a critical system error");
+                    println!("[init] This could be due to: insufficient memory, corrupted binary, or page table corruption");
+                    println!("[init] Halting system - retry would not help");
                     rustos::hlt_loop();
                 }
                 
@@ -207,9 +209,9 @@ fn launch_rsh() -> ! {
                     rustos::hlt_loop();
                 }
                 
-                // Add a small delay to prevent tight loop
+                // Add a delay to prevent tight loop that could exhaust resources
                 println!("[init] Waiting before retry... ({}/{})", consecutive_failures, MAX_CONSECUTIVE_FAILURES);
-                for _ in 0..10_000_000 {
+                for _ in 0..RETRY_DELAY_ITERATIONS {
                     core::hint::spin_loop();
                 }
             }
