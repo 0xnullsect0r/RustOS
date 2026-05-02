@@ -158,8 +158,18 @@ pub fn _print(args: fmt::Arguments) {
     use x86_64::instructions::interrupts;
 
     interrupts::without_interrupts(|| {
-        WRITER.lock().write_fmt(args).unwrap();
+        // Try framebuffer first (for UEFI systems)
+        use crate::drivers::framebuffer::FRAMEBUFFER_WRITER;
+        if let Some(fb_writer) = FRAMEBUFFER_WRITER.lock().as_mut() {
+            fb_writer.write_fmt(args).unwrap();
+        } else {
+            // Fall back to VGA text buffer (for BIOS systems)
+            WRITER.lock().write_fmt(args).unwrap();
+        }
     });
+
+    // Always mirror to serial for debugging
+    crate::serial_print!("{}", args);
 }
 
 /// Like the `print!` macro in the standard library, but prints to the VGA text buffer.
