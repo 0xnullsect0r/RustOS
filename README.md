@@ -179,8 +179,12 @@ cargo bootimage
 
 Write to a USB stick (Linux):
 ```sh
-sudo dd if=target/x86_64-rustos/debug/bootimage-rustos.bin of=/dev/sdX bs=4M status=progress
+sudo dd if=target/x86_64-rustos/debug/bootimage-rustos.bin of=/dev/sdX bs=4M status=progress && sync
 ```
+
+> **Note:** After writing, `lsblk` will show your USB drive with **no partitions** — this is
+> expected. The raw BIOS bootimage has no partition table; the MBR bootloader occupies the first
+> sector directly. The image is also small (~364 KB); the rest of the drive is unused blank space.
 
 ## Releases
 
@@ -192,8 +196,39 @@ git tag v0.1.0 && git push origin v0.1.0
 
 GitHub Actions will:
 1. Build with `cargo bootimage --release`
-2. Wrap the binary in an El Torito BIOS-bootable ISO with `xorriso`
-3. Publish `rustos-<version>.iso` as a GitHub Release asset
+2. Rename the output to `rustos-<version>.img`
+3. Publish `rustos-<version>.img` as a GitHub Release asset (raw x86_64 BIOS disk image)
+
+### Writing the release image to a USB drive
+
+Download `rustos-<version>.img` from the [Releases page](../../releases), then:
+
+**Linux / macOS:**
+```sh
+sudo dd if=rustos-v0.1.0.img of=/dev/sdX bs=4M status=progress && sync
+```
+Replace `/dev/sdX` with your USB device (e.g. `/dev/sdb`). **Do NOT use a partition**
+(e.g. `/dev/sdb1`) — write to the whole device.
+
+After `dd` finishes, `lsblk` will show the USB drive with **no partitions listed**. That is
+normal — the bootimage does not use a partition table.
+
+**Windows (Rufus):** Select the `.img` file and choose **"DD Image"** write mode.
+
+### BIOS / CSM requirement
+
+This kernel uses a legacy BIOS bootloader. To boot it on real hardware:
+
+- In your UEFI firmware settings, enable **Legacy Boot / CSM** (Compatibility Support Module).
+- Systems set to **UEFI-only** mode will not boot this image.
+
+### Test the release image in QEMU (no USB drive needed)
+
+```sh
+qemu-system-x86_64 \
+  -drive format=raw,file=rustos-v0.1.0.img \
+  -serial stdio
+```
 
 ## CI
 
