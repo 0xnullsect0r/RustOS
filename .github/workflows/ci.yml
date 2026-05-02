@@ -13,6 +13,8 @@ jobs:
   check:
     name: Cargo Check
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -37,6 +39,8 @@ jobs:
   fmt:
     name: Formatting
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
@@ -48,6 +52,8 @@ jobs:
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
@@ -68,6 +74,8 @@ jobs:
   test:
     name: Integration Tests (QEMU + UEFI)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 

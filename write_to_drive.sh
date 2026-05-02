@@ -59,6 +59,20 @@ if [[ ! -e "$DRIVE" ]]; then
     exit 1
 fi
 
+# Ensure the target is a block device
+if [[ ! -b "$DRIVE" ]]; then
+    echo "Error: '$DRIVE' is not a block device." >&2
+    exit 1
+fi
+
+# Refuse to write to a device that has a mounted partition used as / or /boot
+if grep -qs "^${DRIVE}" /proc/mounts; then
+    MOUNTS=$(grep "^${DRIVE}" /proc/mounts | awk '{print $2}' | tr '\n' ' ')
+    echo "Error: '$DRIVE' (or one of its partitions) is currently mounted at: $MOUNTS" >&2
+    echo "Unmount it first before flashing." >&2
+    exit 1
+fi
+
 # Warn if a partition was given instead of the whole disk
 if [[ "$DRIVE" =~ [0-9]$ ]]; then
     echo "Warning: '$DRIVE' looks like a partition. For a bootable image you" >&2
@@ -91,7 +105,8 @@ fi
 
 TAG=$(printf '%s' "$RELEASE_JSON" \
     | grep -m1 '"tag_name"' \
-    | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
+    | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/' \
+    | tr -cd 'a-zA-Z0-9._-')
 
 DOWNLOAD_URL=$(printf '%s' "$RELEASE_JSON" \
     | grep '"browser_download_url"' \

@@ -13,7 +13,7 @@ set -e
 BINARY="$1"
 shift
 
-REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")" && pwd)"
 TMPDIR_WORK="$(mktemp -d)"
 IMG="$TMPDIR_WORK/rustos.img"
 

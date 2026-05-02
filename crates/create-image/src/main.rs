@@ -18,7 +18,12 @@ fn main() {
     bootloader::UefiBoot::new(&kernel)
         .create_disk_image(&output)
         .unwrap_or_else(|e| {
-            eprintln!("Failed to create UEFI disk image: {}", e);
+            eprintln!(
+                "Failed to create UEFI disk image from '{}' to '{}': {}",
+                kernel.display(),
+                output.display(),
+                e
+            );
             process::exit(1);
         });
 
