@@ -144,6 +144,8 @@ impl Writer {
     }
 }
 
+// Keep this conversion private so the VGA color enum remains the shell-facing
+// API while framebuffer-specific colors stay encapsulated in the active backend.
 fn to_framebuffer_color(color: Color) -> crate::drivers::framebuffer::Color {
     use crate::drivers::framebuffer::Color as FbColor;
 

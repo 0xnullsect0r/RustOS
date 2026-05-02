@@ -127,33 +127,33 @@ pub fn exec(data: &[u8]) -> Result<i64, String> {
         }
 
         let vaddr = ph.p_vaddr;
-        let p_filesz = ph.p_filesz;
-        let p_memsz = ph.p_memsz;
-        let p_offset = ph.p_offset;
+        let file_size = ph.p_filesz;
+        let mem_size = ph.p_memsz;
+        let file_offset = ph.p_offset;
         let page_start = vaddr & !0xFFF;
-        let page_end = (vaddr + p_memsz + 0xFFF) & !0xFFF;
+        let page_end = (vaddr + mem_size + 0xFFF) & !0xFFF;
         let size = (page_end - page_start) as usize;
 
         crate::memory::map_user_segment(page_start, size)
             .map_err(|_| String::from("segment mapping failed (see serial for details)"))?;
 
         // Copy file data into the freshly mapped virtual memory
-        let file_start = p_offset as usize;
-        let file_end = file_start + p_filesz as usize;
+        let file_start = file_offset as usize;
+        let file_end = file_start + file_size as usize;
         if file_end > data.len() {
             return Err(String::from("segment file data out of bounds"));
         }
 
         unsafe {
             let dst = vaddr as *mut u8;
-            core::ptr::copy_nonoverlapping(data.as_ptr().add(file_start), dst, p_filesz as usize);
+            core::ptr::copy_nonoverlapping(data.as_ptr().add(file_start), dst, file_size as usize);
 
-            // Zero BSS (p_memsz > p_filesz)
-            if p_memsz > p_filesz {
+            // Zero BSS (mem_size > file_size)
+            if mem_size > file_size {
                 core::ptr::write_bytes(
-                    dst.add(p_filesz as usize),
+                    dst.add(file_size as usize),
                     0,
-                    (p_memsz - p_filesz) as usize,
+                    (mem_size - file_size) as usize,
                 );
             }
         }
