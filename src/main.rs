@@ -27,6 +27,15 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     use x86_64::VirtAddr;
 
     rustos::init();
+    
+    // Initialize framebuffer early if available (before println!)
+    if let Some(framebuffer) = boot_info.framebuffer.take() {
+        unsafe {
+            rustos::drivers::framebuffer::init(framebuffer);
+        }
+        // Clear screen and show boot message
+        println!("\n=== RustOS Kernel Initializing ===\n");
+    }
 
     let phys_mem_offset = VirtAddr::new(
         boot_info
