@@ -25,7 +25,11 @@ lazy_static! {
 }
 
 pub fn init() {
-    let _ = SCANCODE_QUEUE.try_init_once(|| ArrayQueue::new(100));
+    if SCANCODE_QUEUE.try_get().is_err() {
+        SCANCODE_QUEUE
+            .try_init_once(|| ArrayQueue::new(100))
+            .expect("failed to initialize keyboard scancode queue");
+    }
 }
 
 /// Called by the keyboard interrupt handler

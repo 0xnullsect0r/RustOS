@@ -5,6 +5,7 @@
 //!   rdi = arg1, rsi = arg2, rdx = arg3
 //!   Return value in rax (negative = error).
 
+use alloc::{string::String, vec::Vec};
 use x86_64::structures::idt::InterruptStackFrame;
 
 /// Syscall numbers — must match rustos-rt/src/lib.rs.
@@ -13,6 +14,7 @@ pub const SYS_READ: u64 = 0;
 pub const SYS_WRITE: u64 = 1;
 pub const SYS_EXEC: u64 = 59;
 pub const SYS_EXIT: u64 = 60;
+const MAX_CSTR_LEN: usize = 4096;
 
 /// File descriptors
 pub const FD_STDIN: u64 = 0;
@@ -116,6 +118,7 @@ fn sys_read(fd: u64, buf: *mut u8, len: usize) -> i64 {
                     break;
                 }
             }
+            // Non-blocking read for now; callers may poll until input arrives.
             None => break,
         }
     }
@@ -126,7 +129,7 @@ fn sys_exec(path_ptr: *const u8) -> i64 {
     if path_ptr.is_null() {
         return -22; // -EINVAL
     }
-    let path = unsafe { cstr_to_str(path_ptr) };
+    let path = cstr_to_string(path_ptr);
     let Some(path) = path else {
         return -22;
     };
@@ -135,7 +138,7 @@ fn sys_exec(path_ptr: *const u8) -> i64 {
         let Some(vfs) = guard.as_mut() else {
             return -5; // -EIO
         };
-        match vfs.read_file(path) {
+        match vfs.read_file(&path) {
             Ok(d) => d,
             Err(_) => return -2, // -ENOENT
         }
@@ -143,17 +146,19 @@ fn sys_exec(path_ptr: *const u8) -> i64 {
     crate::process::exec(&data).unwrap_or(-8)
 }
 
-unsafe fn cstr_to_str(ptr: *const u8) -> Option<&'static str> {
-    let mut len = 0usize;
-    while len < 4096 {
-        if unsafe { *ptr.add(len) } == 0 {
+fn cstr_to_string(ptr: *const u8) -> Option<String> {
+    let mut bytes = Vec::new();
+    let mut found_nul = false;
+    for i in 0..MAX_CSTR_LEN {
+        let b = unsafe { *ptr.add(i) };
+        if b == 0 {
+            found_nul = true;
             break;
         }
-        len += 1;
+        bytes.push(b);
     }
-    if len == 4096 {
+    if !found_nul {
         return None;
     }
-    let bytes = unsafe { core::slice::from_raw_parts(ptr, len) };
-    core::str::from_utf8(bytes).ok()
+    String::from_utf8(bytes).ok()
 }

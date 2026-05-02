@@ -117,17 +117,19 @@ fn install_rsh_binary() {
         println!("[init] VFS not initialized; cannot install /bin/rsh");
         return;
     };
-    if let Err(e) = vfs.mkdir("/bin")
-        && !matches!(e, rustos::vfs::VfsError::AlreadyExists)
-    {
-        println!("[init] failed to create /bin: {}", e);
-        return;
+    match vfs.mkdir("/bin") {
+        Ok(()) | Err(rustos::vfs::VfsError::AlreadyExists) => {}
+        Err(e) => {
+            println!("[init] failed to create /bin: {}", e);
+            return;
+        }
     }
     if let Err(e) = vfs.write_file("/bin/rsh", rsh) {
         println!("[init] failed to install /bin/rsh: {}", e);
     }
 }
 
+/// Launches `/bin/rsh` as the init shell process and restarts it on exit.
 fn launch_rsh() -> ! {
     println!("RustOS v{} — launching /bin/rsh", env!("CARGO_PKG_VERSION"));
     loop {

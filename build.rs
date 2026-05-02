@@ -16,15 +16,14 @@ fn main() {
     }
 
     let cargo = env::var("CARGO").unwrap_or_else(|_| String::from("cargo"));
-    let status = Command::new(cargo)
-        .current_dir(&rsh_dir)
-        .env_remove("RUSTC_WORKSPACE_WRAPPER")
-        .env_remove("RUSTC_WRAPPER")
-        .env_remove("CLIPPY_ARGS")
-        .arg("build")
-        .arg("--release")
-        .status()
-        .expect("failed to execute cargo to build rsh");
+    let mut cmd = Command::new(cargo);
+    cmd.current_dir(&rsh_dir).arg("build").arg("--release");
+    if env::var_os("CLIPPY_ARGS").is_some() {
+        cmd.env_remove("RUSTC_WORKSPACE_WRAPPER")
+            .env_remove("RUSTC_WRAPPER")
+            .env_remove("CLIPPY_ARGS");
+    }
+    let status = cmd.status().expect("failed to execute cargo to build rsh");
     if !status.success() {
         panic!("failed to build rsh submodule");
     }
