@@ -1,13 +1,13 @@
 pub mod frame_allocator;
 pub use frame_allocator::{BootInfoFrameAllocator, EmptyFrameAllocator};
 
-use spin::Mutex;
 use core::sync::atomic::{AtomicU64, Ordering};
+use spin::Mutex;
 use x86_64::{
     PhysAddr, VirtAddr,
     structures::paging::{
-        FrameAllocator, Mapper, OffsetPageTable, Page, PageTable, PageTableFlags,
-        PhysFrame, Size4KiB, mapper::MapToError,
+        FrameAllocator, Mapper, OffsetPageTable, Page, PageTable, PageTableFlags, PhysFrame,
+        Size4KiB, mapper::MapToError,
     },
 };
 
@@ -38,7 +38,7 @@ unsafe impl FrameAllocator<Size4KiB> for GlobalFrameAllocatorRef {
 /// Panics if the virtual address cannot be translated (should never happen for
 /// memory allocated through our kernel heap).
 pub fn dma_alloc(size: usize, align: usize) -> (*mut u8, u64) {
-    use alloc::alloc::{alloc_zeroed, Layout};
+    use alloc::alloc::{Layout, alloc_zeroed};
     let layout = Layout::from_size_align(size, align.max(1)).unwrap();
     let ptr = unsafe { alloc_zeroed(layout) };
     assert!(!ptr.is_null(), "dma_alloc: allocation failed");
@@ -65,19 +65,19 @@ pub fn virt_to_phys(virt: u64) -> Option<u64> {
 pub fn map_mmio_region(phys_base: u64, size: usize) -> u64 {
     let offset = PHYS_MEM_OFFSET.load(Ordering::Relaxed);
     let virt_base = offset + phys_base;
-    let num_pages = (size + 4095) / 4096;
+    let num_pages = size.div_ceil(4096);
 
     let mut mapper_guard = GLOBAL_MAPPER.lock();
-    let mapper = mapper_guard.as_mut().expect("map_mmio_region: mapper not initialized");
+    let mapper = mapper_guard
+        .as_mut()
+        .expect("map_mmio_region: mapper not initialized");
 
     for i in 0..num_pages as u64 {
         let virt = VirtAddr::new(virt_base + i * 4096);
         let phys = PhysAddr::new(phys_base + i * 4096);
         let page = Page::<Size4KiB>::containing_address(virt);
         let frame = PhysFrame::containing_address(phys);
-        let flags = PageTableFlags::PRESENT
-            | PageTableFlags::WRITABLE
-            | PageTableFlags::NO_CACHE;
+        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_CACHE;
 
         match unsafe { mapper.map_to(page, frame, flags, &mut GlobalFrameAllocatorRef) } {
             Ok(flush) => flush.flush(),
@@ -93,9 +93,11 @@ pub fn map_mmio_region(phys_base: u64, size: usize) -> u64 {
 /// Map a set of virtual pages for a user process segment.
 /// `virt_base` must be page-aligned; `size` is rounded up to the next page.
 pub fn map_user_segment(virt_base: u64, size: usize) -> Result<(), MapToError<Size4KiB>> {
-    let num_pages = (size + 4095) / 4096;
+    let num_pages = size.div_ceil(4096);
     let mut mapper_guard = GLOBAL_MAPPER.lock();
-    let mapper = mapper_guard.as_mut().ok_or(MapToError::FrameAllocationFailed)?;
+    let mapper = mapper_guard
+        .as_mut()
+        .ok_or(MapToError::FrameAllocationFailed)?;
 
     for i in 0..num_pages as u64 {
         let virt = VirtAddr::new(virt_base + i * 4096);
@@ -104,7 +106,11 @@ pub fn map_user_segment(virt_base: u64, size: usize) -> Result<(), MapToError<Si
             .allocate_frame()
             .ok_or(MapToError::FrameAllocationFailed)?;
         let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
-        unsafe { mapper.map_to(page, frame, flags, &mut GlobalFrameAllocatorRef)?.flush() };
+        unsafe {
+            mapper
+                .map_to(page, frame, flags, &mut GlobalFrameAllocatorRef)?
+                .flush()
+        };
     }
     Ok(())
 }

@@ -1,5 +1,5 @@
-pub mod xhci;
 pub mod mass_storage;
+pub mod xhci;
 
 use alloc::boxed::Box;
 use spin::Mutex;
@@ -37,11 +37,15 @@ pub struct XhciBlockDevice {
 
 impl BlockDevice for XhciBlockDevice {
     fn read_sectors(&mut self, lba: u64, count: u16) -> Option<alloc::vec::Vec<u8>> {
-        USB_XHCI.lock().as_mut()?.read_sectors_dev(self.dev_idx, lba, count)
+        USB_XHCI
+            .lock()
+            .as_mut()?
+            .read_sectors_dev(self.dev_idx, lba, count)
     }
 
     fn sector_count(&self) -> u64 {
-        USB_XHCI.lock()
+        USB_XHCI
+            .lock()
             .as_ref()
             .and_then(|x| x.devices.get(self.dev_idx))
             .map(|d| d.block_count)
@@ -61,7 +65,11 @@ impl BlockDevice for XhciBlockDevice {
 /// briefly only to read the device count, then releases it before doing any
 /// FAT32 I/O (which re-acquires the lock per-sector).
 pub fn mount_storage_devices(from_idx: usize) {
-    let device_count = USB_XHCI.lock().as_ref().map(|x| x.devices.len()).unwrap_or(0);
+    let device_count = USB_XHCI
+        .lock()
+        .as_ref()
+        .map(|x| x.devices.len())
+        .unwrap_or(0);
 
     for dev_idx in from_idx..device_count {
         let block_dev = Box::new(XhciBlockDevice { dev_idx });
@@ -93,7 +101,11 @@ pub fn mount_storage_devices(from_idx: usize) {
 /// Designed to be called from the `usbscan` shell command.
 pub fn scan_and_mount() -> usize {
     // Phase 1: scan ports inside the XHCI lock, collect new device count.
-    let before = USB_XHCI.lock().as_ref().map(|x| x.devices.len()).unwrap_or(0);
+    let before = USB_XHCI
+        .lock()
+        .as_ref()
+        .map(|x| x.devices.len())
+        .unwrap_or(0);
     {
         let mut xhci = USB_XHCI.lock();
         if let Some(x) = xhci.as_mut() {
@@ -103,10 +115,13 @@ pub fn scan_and_mount() -> usize {
 
     // Phase 2: mount any newly discovered devices (acquires USB_XHCI briefly
     // per-sector, never while VFS is held).
-    let after = USB_XHCI.lock().as_ref().map(|x| x.devices.len()).unwrap_or(0);
+    let after = USB_XHCI
+        .lock()
+        .as_ref()
+        .map(|x| x.devices.len())
+        .unwrap_or(0);
     if after > before {
         mount_storage_devices(before);
     }
     after - before
 }
-

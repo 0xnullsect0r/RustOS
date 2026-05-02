@@ -8,12 +8,12 @@
 use x86_64::structures::idt::InterruptStackFrame;
 
 /// Syscall numbers
-pub const SYS_EXIT:  u64 = 0;
+pub const SYS_EXIT: u64 = 0;
 pub const SYS_WRITE: u64 = 1;
-pub const SYS_READ:  u64 = 2;
+pub const SYS_READ: u64 = 2;
 
 /// File descriptors
-pub const FD_STDIN:  u64 = 0;
+pub const FD_STDIN: u64 = 0;
 pub const FD_STDOUT: u64 = 1;
 pub const FD_STDERR: u64 = 2;
 
@@ -24,7 +24,7 @@ pub static PROCESS_EXIT_CODE: spin::Mutex<Option<i64>> = spin::Mutex::new(None);
 /// The raw interrupt handler registered for int 0x80.
 /// We use the `x86-interrupt` calling convention which saves/restores all
 /// caller-saved registers automatically.
-pub extern "x86-interrupt" fn syscall_handler(stack_frame: InterruptStackFrame) {
+pub extern "x86-interrupt" fn syscall_handler(_stack_frame: InterruptStackFrame) {
     // Read registers saved by the CPU / interrupt prologue.
     // We retrieve rax/rdi/rsi/rdx via inline asm before the compiler clobbers them.
     let (nr, a1, a2, a3): (u64, u64, u64, u64);
@@ -46,10 +46,16 @@ pub extern "x86-interrupt" fn syscall_handler(stack_frame: InterruptStackFrame) 
 
 fn dispatch(nr: u64, a1: u64, a2: u64, a3: u64) {
     match nr {
-        SYS_EXIT  => sys_exit(a1 as i64),
-        SYS_WRITE => { sys_write(a1, a2 as *const u8, a3 as usize); }
-        SYS_READ  => { sys_read(a1, a2 as *mut u8, a3 as usize); }
-        _         => { crate::serial_println!("[syscall] unknown nr={}", nr); }
+        SYS_EXIT => sys_exit(a1 as i64),
+        SYS_WRITE => {
+            sys_write(a1, a2 as *const u8, a3 as usize);
+        }
+        SYS_READ => {
+            sys_read(a1, a2 as *mut u8, a3 as usize);
+        }
+        _ => {
+            crate::serial_println!("[syscall] unknown nr={}", nr);
+        }
     }
 }
 
@@ -69,7 +75,9 @@ fn sys_write(fd: u64, buf: *const u8, len: usize) {
     if let Ok(s) = core::str::from_utf8(slice) {
         match fd {
             FD_STDOUT => crate::print!("{}", s),
-            FD_STDERR => { crate::serial_print!("{}", s); }
+            FD_STDERR => {
+                crate::serial_print!("{}", s);
+            }
             _ => {}
         }
     }

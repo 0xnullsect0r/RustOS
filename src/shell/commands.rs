@@ -1,32 +1,32 @@
 //! Built-in shell command implementations.
 
-use crate::drivers::vga::Color;
-use crate::vfs::{VFS, NodeType};
 use super::Shell;
+use crate::drivers::vga::Color;
+use crate::vfs::{NodeType, VFS};
 
 /// Dispatch a parsed command name and argument list to the appropriate handler.
 pub fn dispatch(shell: &mut Shell, cmd: &str, args: &[&str]) {
     match cmd {
-        "help"    => cmd_help(),
-        "echo"    => cmd_echo(args),
-        "clear"   => cmd_clear(),
-        "uname"   => cmd_uname(),
-        "color"   => cmd_color(shell, args),
-        "pwd"     => cmd_pwd(shell),
-        "ls"      => cmd_ls(shell, args),
-        "cd"      => cmd_cd(shell, args),
-        "mkdir"   => cmd_mkdir(shell, args),
-        "rm"      => cmd_rm(shell, args),
-        "cat"     => cmd_cat(shell, args),
-        "write"   => cmd_write(shell, args),
-        "cp"      => cmd_cp(shell, args),
-        "mv"      => cmd_mv(shell, args),
+        "help" => cmd_help(),
+        "echo" => cmd_echo(args),
+        "clear" => cmd_clear(),
+        "uname" => cmd_uname(),
+        "color" => cmd_color(shell, args),
+        "pwd" => cmd_pwd(shell),
+        "ls" => cmd_ls(shell, args),
+        "cd" => cmd_cd(shell, args),
+        "mkdir" => cmd_mkdir(shell, args),
+        "rm" => cmd_rm(shell, args),
+        "cat" => cmd_cat(shell, args),
+        "write" => cmd_write(shell, args),
+        "cp" => cmd_cp(shell, args),
+        "mv" => cmd_mv(shell, args),
         "meminfo" => cmd_meminfo(),
-        "mount"   => cmd_mount(),
-        "exec"    => cmd_exec(shell, args),
+        "mount" => cmd_mount(),
+        "exec" => cmd_exec(shell, args),
         "usbscan" => cmd_usbscan(),
-        "reboot"  => cmd_reboot(),
-        other     => crate::println!("unknown command: '{}'. Type 'help' for a list.", other),
+        "reboot" => cmd_reboot(),
+        other => crate::println!("unknown command: '{}'. Type 'help' for a list.", other),
     }
 }
 
@@ -69,22 +69,22 @@ fn cmd_uname() {
 
 fn parse_color(s: &str) -> Option<Color> {
     match s {
-        "black"      => Some(Color::Black),
-        "blue"       => Some(Color::Blue),
-        "green"      => Some(Color::Green),
-        "cyan"       => Some(Color::Cyan),
-        "red"        => Some(Color::Red),
-        "magenta"    => Some(Color::Magenta),
-        "brown"      => Some(Color::Brown),
-        "lightgray"  => Some(Color::LightGray),
-        "darkgray"   => Some(Color::DarkGray),
-        "lightblue"  => Some(Color::LightBlue),
+        "black" => Some(Color::Black),
+        "blue" => Some(Color::Blue),
+        "green" => Some(Color::Green),
+        "cyan" => Some(Color::Cyan),
+        "red" => Some(Color::Red),
+        "magenta" => Some(Color::Magenta),
+        "brown" => Some(Color::Brown),
+        "lightgray" => Some(Color::LightGray),
+        "darkgray" => Some(Color::DarkGray),
+        "lightblue" => Some(Color::LightBlue),
         "lightgreen" => Some(Color::LightGreen),
-        "lightcyan"  => Some(Color::LightCyan),
-        "lightred"   => Some(Color::LightRed),
-        "pink"       => Some(Color::Pink),
-        "yellow"     => Some(Color::Yellow),
-        "white"      => Some(Color::White),
+        "lightcyan" => Some(Color::LightCyan),
+        "lightred" => Some(Color::LightRed),
+        "pink" => Some(Color::Pink),
+        "yellow" => Some(Color::Yellow),
+        "white" => Some(Color::White),
         _ => None,
     }
 }
@@ -93,16 +93,24 @@ fn cmd_color(shell: &mut Shell, args: &[&str]) {
     if args.len() < 2 {
         crate::println!("Usage: color <fg> <bg>");
         crate::println!("Colors: black blue green cyan red magenta brown lightgray");
-        crate::println!("        darkgray lightblue lightgreen lightcyan lightred pink yellow white");
+        crate::println!(
+            "        darkgray lightblue lightgreen lightcyan lightred pink yellow white"
+        );
         return;
     }
     let fg = match parse_color(args[0]) {
         Some(c) => c,
-        None => { crate::println!("Unknown color: '{}'", args[0]); return; }
+        None => {
+            crate::println!("Unknown color: '{}'", args[0]);
+            return;
+        }
     };
     let bg = match parse_color(args[1]) {
         Some(c) => c,
-        None => { crate::println!("Unknown color: '{}'", args[1]); return; }
+        None => {
+            crate::println!("Unknown color: '{}'", args[1]);
+            return;
+        }
     };
     shell.fg_color = fg;
     shell.bg_color = bg;
@@ -123,7 +131,7 @@ fn cmd_ls(shell: &mut Shell, args: &[&str]) {
             for e in &entries {
                 match e.node_type {
                     NodeType::Directory => crate::println!("{}/", e.name),
-                    NodeType::File      => crate::println!("{}", e.name),
+                    NodeType::File => crate::println!("{}", e.name),
                 }
             }
         }
@@ -134,7 +142,11 @@ fn cmd_ls(shell: &mut Shell, args: &[&str]) {
 fn cmd_cd(shell: &mut Shell, args: &[&str]) {
     let input = args.first().copied().unwrap_or("/");
     let path = shell.resolve_path(input);
-    let is_dir = VFS.lock().as_mut().map(|vfs| vfs.is_dir(&path)).unwrap_or(false);
+    let is_dir = VFS
+        .lock()
+        .as_mut()
+        .map(|vfs| vfs.is_dir(&path))
+        .unwrap_or(false);
     if is_dir {
         shell.cwd = path;
     } else {
@@ -176,14 +188,20 @@ fn cmd_cat(shell: &mut Shell, args: &[&str]) {
         return;
     };
     let path = shell.resolve_path(input);
-    let result = VFS.lock().as_mut().and_then(|vfs| vfs.read_file(&path).ok());
+    let result = VFS
+        .lock()
+        .as_mut()
+        .and_then(|vfs| vfs.read_file(&path).ok());
     match result {
         Some(data) => match core::str::from_utf8(&data) {
             Ok(s) => crate::println!("{}", s),
             Err(_) => {
                 for &b in &data {
-                    if b.is_ascii() { crate::print!("{}", b as char); }
-                    else { crate::print!("?"); }
+                    if b.is_ascii() {
+                        crate::print!("{}", b as char);
+                    } else {
+                        crate::print!("?");
+                    }
                 }
                 crate::println!();
             }
@@ -199,7 +217,10 @@ fn cmd_write(shell: &mut Shell, args: &[&str]) {
     }
     let path = shell.resolve_path(args[0]);
     let text = args[1..].join(" ");
-    let result = VFS.lock().as_mut().map(|vfs| vfs.write_file(&path, text.as_bytes()));
+    let result = VFS
+        .lock()
+        .as_mut()
+        .map(|vfs| vfs.write_file(&path, text.as_bytes()));
     match result {
         Some(Ok(())) => {}
         Some(Err(e)) => crate::println!("write: {}", e),
@@ -239,7 +260,8 @@ fn cmd_mv(shell: &mut Shell, args: &[&str]) {
 
 fn cmd_meminfo() {
     crate::println!("Heap start: 0x{:016x}", crate::allocator::HEAP_START);
-    crate::println!("Heap size:  {} KiB ({} bytes)",
+    crate::println!(
+        "Heap size:  {} KiB ({} bytes)",
         crate::allocator::HEAP_SIZE / 1024,
         crate::allocator::HEAP_SIZE,
     );
@@ -265,15 +287,21 @@ fn cmd_exec(shell: &mut Shell, args: &[&str]) {
     };
     let path = shell.resolve_path(input);
     let data = {
-        let result = VFS.lock().as_mut().and_then(|vfs| vfs.read_file(&path).ok());
+        let result = VFS
+            .lock()
+            .as_mut()
+            .and_then(|vfs| vfs.read_file(&path).ok());
         match result {
             Some(d) => d,
-            None => { crate::println!("exec: {}: not found", path); return; }
+            None => {
+                crate::println!("exec: {}: not found", path);
+                return;
+            }
         }
     };
     match crate::process::exec(&data) {
-        Ok(code)  => crate::println!("exec: process exited with code {}", code),
-        Err(e)    => crate::println!("exec: load error: {}", e),
+        Ok(code) => crate::println!("exec: process exited with code {}", code),
+        Err(e) => crate::println!("exec: load error: {}", e),
     }
 }
 

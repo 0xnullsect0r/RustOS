@@ -8,7 +8,11 @@
 pub mod ramfs;
 pub use ramfs::RamFs;
 
-use alloc::{string::{String, ToString}, vec::Vec, boxed::Box};
+use alloc::{
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
 use spin::Mutex;
 
 // ---------------------------------------------------------------------------
@@ -30,14 +34,14 @@ pub enum VfsError {
 impl core::fmt::Display for VfsError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            VfsError::NotFound         => write!(f, "not found"),
-            VfsError::AlreadyExists    => write!(f, "already exists"),
-            VfsError::NotADirectory    => write!(f, "not a directory"),
-            VfsError::NotAFile         => write!(f, "not a file"),
+            VfsError::NotFound => write!(f, "not found"),
+            VfsError::AlreadyExists => write!(f, "already exists"),
+            VfsError::NotADirectory => write!(f, "not a directory"),
+            VfsError::NotAFile => write!(f, "not a file"),
             VfsError::DirectoryNotEmpty => write!(f, "directory not empty"),
-            VfsError::InvalidPath      => write!(f, "invalid path"),
-            VfsError::IoError          => write!(f, "I/O error"),
-            VfsError::ReadOnly         => write!(f, "read-only filesystem"),
+            VfsError::InvalidPath => write!(f, "invalid path"),
+            VfsError::IoError => write!(f, "I/O error"),
+            VfsError::ReadOnly => write!(f, "read-only filesystem"),
         }
     }
 }
@@ -45,7 +49,10 @@ impl core::fmt::Display for VfsError {
 pub type VfsResult<T> = Result<T, VfsError>;
 
 #[derive(Debug, Clone)]
-pub enum NodeType { File, Directory }
+pub enum NodeType {
+    File,
+    Directory,
+}
 
 #[derive(Debug, Clone)]
 pub struct DirEntry {
@@ -59,15 +66,15 @@ pub struct DirEntry {
 
 /// Any filesystem that can be mounted into the VFS must implement this trait.
 pub trait Filesystem: Send {
-    fn list_dir(&mut self, path: &str)  -> VfsResult<Vec<DirEntry>>;
+    fn list_dir(&mut self, path: &str) -> VfsResult<Vec<DirEntry>>;
     fn read_file(&mut self, path: &str) -> VfsResult<Vec<u8>>;
     fn write_file(&mut self, path: &str, data: &[u8]) -> VfsResult<()>;
-    fn mkdir(&mut self, path: &str)    -> VfsResult<()>;
-    fn remove(&mut self, path: &str)   -> VfsResult<()>;
+    fn mkdir(&mut self, path: &str) -> VfsResult<()>;
+    fn remove(&mut self, path: &str) -> VfsResult<()>;
     fn rename(&mut self, src: &str, dst: &str) -> VfsResult<()>;
-    fn copy(&mut self, src: &str, dst: &str)   -> VfsResult<()>;
-    fn is_dir(&mut self, path: &str)   -> bool;
-    fn exists(&mut self, path: &str)   -> bool;
+    fn copy(&mut self, src: &str, dst: &str) -> VfsResult<()>;
+    fn is_dir(&mut self, path: &str) -> bool;
+    fn exists(&mut self, path: &str) -> bool;
 }
 
 // ---------------------------------------------------------------------------
@@ -83,13 +90,29 @@ impl Filesystem for RamFs {
         let s: &Self = self;
         s.read_file(path)
     }
-    fn write_file(&mut self, path: &str, data: &[u8]) -> VfsResult<()> { self.write_file(path, data) }
-    fn mkdir(&mut self, path: &str)                                    -> VfsResult<()> { self.mkdir(path) }
-    fn remove(&mut self, path: &str)                                   -> VfsResult<()> { self.remove(path) }
-    fn rename(&mut self, src: &str, dst: &str)                         -> VfsResult<()> { self.rename(src, dst) }
-    fn copy(&mut self, src: &str, dst: &str)                           -> VfsResult<()> { self.copy(src, dst) }
-    fn is_dir(&mut self, path: &str)   -> bool { let s: &Self = self; s.is_dir(path) }
-    fn exists(&mut self, path: &str)   -> bool { let s: &Self = self; s.exists(path) }
+    fn write_file(&mut self, path: &str, data: &[u8]) -> VfsResult<()> {
+        self.write_file(path, data)
+    }
+    fn mkdir(&mut self, path: &str) -> VfsResult<()> {
+        self.mkdir(path)
+    }
+    fn remove(&mut self, path: &str) -> VfsResult<()> {
+        self.remove(path)
+    }
+    fn rename(&mut self, src: &str, dst: &str) -> VfsResult<()> {
+        self.rename(src, dst)
+    }
+    fn copy(&mut self, src: &str, dst: &str) -> VfsResult<()> {
+        self.copy(src, dst)
+    }
+    fn is_dir(&mut self, path: &str) -> bool {
+        let s: &Self = self;
+        s.is_dir(path)
+    }
+    fn exists(&mut self, path: &str) -> bool {
+        let s: &Self = self;
+        s.exists(path)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -103,19 +126,36 @@ pub struct Fat32Mount(pub Fat32Fs);
 impl Filesystem for Fat32Mount {
     fn list_dir(&mut self, path: &str) -> VfsResult<Vec<DirEntry>> {
         let entries = self.0.list(path).ok_or(VfsError::NotFound)?;
-        Ok(entries.into_iter().map(|e| DirEntry {
-            name: e.name,
-            node_type: if e.is_dir { NodeType::Directory } else { NodeType::File },
-        }).collect())
+        Ok(entries
+            .into_iter()
+            .map(|e| DirEntry {
+                name: e.name,
+                node_type: if e.is_dir {
+                    NodeType::Directory
+                } else {
+                    NodeType::File
+                },
+            })
+            .collect())
     }
     fn read_file(&mut self, path: &str) -> VfsResult<Vec<u8>> {
         self.0.read_file(path).ok_or(VfsError::IoError)
     }
-    fn write_file(&mut self, _: &str, _: &[u8]) -> VfsResult<()> { Err(VfsError::ReadOnly) }
-    fn mkdir(&mut self, _: &str)                -> VfsResult<()>  { Err(VfsError::ReadOnly) }
-    fn remove(&mut self, _: &str)               -> VfsResult<()>  { Err(VfsError::ReadOnly) }
-    fn rename(&mut self, _: &str, _: &str)      -> VfsResult<()>  { Err(VfsError::ReadOnly) }
-    fn copy(&mut self, _: &str, _: &str)        -> VfsResult<()>  { Err(VfsError::ReadOnly) }
+    fn write_file(&mut self, _: &str, _: &[u8]) -> VfsResult<()> {
+        Err(VfsError::ReadOnly)
+    }
+    fn mkdir(&mut self, _: &str) -> VfsResult<()> {
+        Err(VfsError::ReadOnly)
+    }
+    fn remove(&mut self, _: &str) -> VfsResult<()> {
+        Err(VfsError::ReadOnly)
+    }
+    fn rename(&mut self, _: &str, _: &str) -> VfsResult<()> {
+        Err(VfsError::ReadOnly)
+    }
+    fn copy(&mut self, _: &str, _: &str) -> VfsResult<()> {
+        Err(VfsError::ReadOnly)
+    }
     fn is_dir(&mut self, path: &str) -> bool {
         self.0.list(path).is_some()
     }
@@ -131,20 +171,31 @@ impl Filesystem for Fat32Mount {
 /// A mount point maps a path prefix to a filesystem.
 struct MountPoint {
     prefix: String,
-    fs:     Box<dyn Filesystem>,
+    fs: Box<dyn Filesystem>,
 }
 
 /// Global VFS state: the root RamFs + any additional mount points.
 pub struct Vfs {
-    root:   RamFs,
+    root: RamFs,
     mounts: Vec<MountPoint>,
 }
 
 impl Vfs {
     pub fn new() -> Self {
-        Vfs { root: RamFs::new(), mounts: Vec::new() }
+        Vfs {
+            root: RamFs::new(),
+            mounts: Vec::new(),
+        }
     }
+}
 
+impl Default for Vfs {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Vfs {
     /// Mount `fs` at `mount_path` (e.g. "/usb").
     pub fn mount(&mut self, mount_path: &str, fs: Box<dyn Filesystem>) {
         // Ensure the mount point directory exists in root
@@ -160,11 +211,12 @@ impl Vfs {
         let mut best_idx: Option<usize> = None;
         for (i, mp) in self.mounts.iter().enumerate() {
             let prefix = &mp.prefix;
-            if norm_path == prefix.as_str() || norm_path.starts_with(&alloc::format!("{}/", prefix)) {
-                if prefix.len() > best_len {
-                    best_len = prefix.len();
-                    best_idx = Some(i);
-                }
+            if (norm_path == prefix.as_str()
+                || norm_path.starts_with(&alloc::format!("{}/", prefix)))
+                && prefix.len() > best_len
+            {
+                best_len = prefix.len();
+                best_idx = Some(i);
             }
         }
         best_idx
@@ -179,11 +231,11 @@ impl Vfs {
         let mut best_idx: Option<usize> = None;
         for (i, mp) in self.mounts.iter().enumerate() {
             let prefix = &mp.prefix;
-            if norm == *prefix || norm.starts_with(&alloc::format!("{}/", prefix)) {
-                if prefix.len() > best_len {
-                    best_len = prefix.len();
-                    best_idx = Some(i);
-                }
+            if (norm == *prefix || norm.starts_with(&alloc::format!("{}/", prefix)))
+                && prefix.len() > best_len
+            {
+                best_len = prefix.len();
+                best_idx = Some(i);
             }
         }
         if let Some(idx) = best_idx {
@@ -249,8 +301,16 @@ impl Vfs {
             // Same filesystem — use native rename
             let (rel_src, rel_dst) = if let Some(idx) = src_idx {
                 let prefix = &self.mounts[idx].prefix;
-                let rs = if norm_src == *prefix { String::from("/") } else { norm_src[prefix.len()..].to_string() };
-                let rd = if norm_dst == *prefix { String::from("/") } else { norm_dst[prefix.len()..].to_string() };
+                let rs = if norm_src == *prefix {
+                    String::from("/")
+                } else {
+                    norm_src[prefix.len()..].to_string()
+                };
+                let rd = if norm_dst == *prefix {
+                    String::from("/")
+                } else {
+                    norm_dst[prefix.len()..].to_string()
+                };
                 (rs, rd)
             } else {
                 (norm_src, norm_dst)

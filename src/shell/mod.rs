@@ -2,8 +2,8 @@
 
 pub mod commands;
 
-use alloc::string::String;
 use crate::drivers::vga::Color;
+use alloc::string::String;
 
 /// The interactive shell state: current directory, input line buffer, and current colors.
 pub struct Shell {
@@ -34,11 +34,10 @@ impl Shell {
                 self.print_prompt();
             }
             // Backspace / DEL
-            '\x08' | '\x7f' => {
-                if self.input_buf.pop().is_some() {
-                    crate::print!("\x08 \x08");
-                }
+            '\x08' | '\x7f' if self.input_buf.pop().is_some() => {
+                crate::print!("\x08 \x08");
             }
+            '\x08' | '\x7f' => {}
             c if c.is_ascii() && !c.is_ascii_control() => {
                 self.input_buf.push(c);
                 crate::print!("{}", c);
@@ -79,5 +78,11 @@ impl Shell {
         };
         let args: alloc::vec::Vec<&str> = rest.split_whitespace().collect();
         commands::dispatch(self, cmd, &args);
+    }
+}
+
+impl Default for Shell {
+    fn default() -> Self {
+        Self::new()
     }
 }

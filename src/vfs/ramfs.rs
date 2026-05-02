@@ -26,8 +26,15 @@ impl RamFs {
             cwd: String::from("/"),
         }
     }
+}
 
-    /// Returns the current working directory path.
+impl Default for RamFs {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl RamFs {
     pub fn cwd(&self) -> &str {
         &self.cwd
     }
@@ -109,10 +116,8 @@ impl RamFs {
         let (parent, name) = split_path(&abs).ok_or(VfsError::InvalidPath)?;
         match self.get_node_mut(&parent)? {
             Node::Directory(children) => {
-                if let Some(Node::Directory(sub)) = children.get(name) {
-                    if !sub.is_empty() {
-                        return Err(VfsError::DirectoryNotEmpty);
-                    }
+                if matches!(children.get(name), Some(Node::Directory(sub)) if !sub.is_empty()) {
+                    return Err(VfsError::DirectoryNotEmpty);
                 }
                 children.remove(name).ok_or(VfsError::NotFound)?;
                 Ok(())

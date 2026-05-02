@@ -18,36 +18,36 @@ use alloc::string::String;
 // ---------------------------------------------------------------------------
 
 const ELF_MAGIC: [u8; 4] = [0x7f, b'E', b'L', b'F'];
-const PT_LOAD:   u32 = 1;
+const PT_LOAD: u32 = 1;
 
 #[repr(C, packed)]
 struct Elf64Hdr {
-    e_ident:     [u8; 16],
-    e_type:      u16,
-    e_machine:   u16,
-    e_version:   u32,
-    e_entry:     u64,
-    e_phoff:     u64,
-    e_shoff:     u64,
-    e_flags:     u32,
-    e_ehsize:    u16,
+    e_ident: [u8; 16],
+    e_type: u16,
+    e_machine: u16,
+    e_version: u32,
+    e_entry: u64,
+    e_phoff: u64,
+    e_shoff: u64,
+    e_flags: u32,
+    e_ehsize: u16,
     e_phentsize: u16,
-    e_phnum:     u16,
+    e_phnum: u16,
     e_shentsize: u16,
-    e_shnum:     u16,
-    e_shstrndx:  u16,
+    e_shnum: u16,
+    e_shstrndx: u16,
 }
 
 #[repr(C, packed)]
 struct Elf64Phdr {
-    p_type:   u32,
-    p_flags:  u32,
+    p_type: u32,
+    p_flags: u32,
     p_offset: u64,
-    p_vaddr:  u64,
-    p_paddr:  u64,
+    p_vaddr: u64,
+    p_paddr: u64,
     p_filesz: u64,
-    p_memsz:  u64,
-    p_align:  u64,
+    p_memsz: u64,
+    p_align: u64,
 }
 
 const STACK_BASE: u64 = 0x0080_0000;
@@ -93,7 +93,7 @@ pub fn exec(data: &[u8]) -> Result<i64, String> {
 
         let vaddr = ph.p_vaddr;
         let page_start = vaddr & !0xFFF;
-        let page_end   = (vaddr + ph.p_memsz + 0xFFF) & !0xFFF;
+        let page_end = (vaddr + ph.p_memsz + 0xFFF) & !0xFFF;
         let size = (page_end - page_start) as usize;
 
         crate::memory::map_user_segment(page_start, size)
@@ -101,13 +101,17 @@ pub fn exec(data: &[u8]) -> Result<i64, String> {
 
         // Copy file data into the freshly mapped virtual memory
         let file_start = ph.p_offset as usize;
-        let file_end   = file_start + ph.p_filesz as usize;
+        let file_end = file_start + ph.p_filesz as usize;
         if file_end > data.len() {
             return Err(String::from("segment file data out of bounds"));
         }
         unsafe {
             let dst = vaddr as *mut u8;
-            core::ptr::copy_nonoverlapping(data.as_ptr().add(file_start), dst, ph.p_filesz as usize);
+            core::ptr::copy_nonoverlapping(
+                data.as_ptr().add(file_start),
+                dst,
+                ph.p_filesz as usize,
+            );
             // Zero BSS (p_memsz > p_filesz)
             if ph.p_memsz > ph.p_filesz {
                 core::ptr::write_bytes(

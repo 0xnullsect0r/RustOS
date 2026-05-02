@@ -7,29 +7,29 @@
 // TRB type codes (bits [15:10] of the Control word, i.e. word[3])
 // ---------------------------------------------------------------------------
 pub mod ty {
-    pub const NORMAL:               u32 = 1;
-    pub const SETUP_STAGE:          u32 = 2;
-    pub const DATA_STAGE:           u32 = 3;
-    pub const STATUS_STAGE:         u32 = 4;
-    pub const LINK:                 u32 = 6;
-    pub const NO_OP:                u32 = 8;
-    pub const ENABLE_SLOT_CMD:      u32 = 9;
-    pub const DISABLE_SLOT_CMD:     u32 = 10;
-    pub const ADDRESS_DEVICE_CMD:   u32 = 11;
-    pub const CONFIGURE_EP_CMD:     u32 = 12;
-    pub const NO_OP_CMD:            u32 = 23;
+    pub const NORMAL: u32 = 1;
+    pub const SETUP_STAGE: u32 = 2;
+    pub const DATA_STAGE: u32 = 3;
+    pub const STATUS_STAGE: u32 = 4;
+    pub const LINK: u32 = 6;
+    pub const NO_OP: u32 = 8;
+    pub const ENABLE_SLOT_CMD: u32 = 9;
+    pub const DISABLE_SLOT_CMD: u32 = 10;
+    pub const ADDRESS_DEVICE_CMD: u32 = 11;
+    pub const CONFIGURE_EP_CMD: u32 = 12;
+    pub const NO_OP_CMD: u32 = 23;
     // Event types
-    pub const TRANSFER_EVENT:       u32 = 32;
+    pub const TRANSFER_EVENT: u32 = 32;
     pub const CMD_COMPLETION_EVENT: u32 = 33;
-    pub const PORT_STATUS_CHANGE:   u32 = 34;
+    pub const PORT_STATUS_CHANGE: u32 = 34;
 }
 
 /// Completion codes (upper 8 bits of event TRB status word).
 pub mod cc {
-    pub const SUCCESS:         u8 = 1;
-    pub const SHORT_PACKET:    u8 = 13;
-    pub const STALL:           u8 = 6;
-    pub const BABBLE:          u8 = 8;
+    pub const SUCCESS: u8 = 1;
+    pub const SHORT_PACKET: u8 = 13;
+    pub const STALL: u8 = 6;
+    pub const BABBLE: u8 = 8;
 }
 
 // ---------------------------------------------------------------------------
@@ -61,7 +61,11 @@ impl Trb {
     }
 
     pub fn set_cycle(&mut self, c: bool) {
-        if c { self.word[3] |= 1; } else { self.word[3] &= !1; }
+        if c {
+            self.word[3] |= 1;
+        } else {
+            self.word[3] &= !1;
+        }
     }
 
     /// Completion code from an event TRB (bits [31:24] of word[2]).
@@ -124,15 +128,16 @@ pub fn configure_ep_cmd(input_ctx_phys: u64, slot_id: u8, cycle: bool) -> Trb {
 
 /// Build a Setup Stage TRB for a control transfer.
 pub fn setup_stage_trb(
-    bm_request_type: u8, b_request: u8,
-    w_value: u16, w_index: u16, w_length: u16,
+    bm_request_type: u8,
+    b_request: u8,
+    w_value: u16,
+    w_index: u16,
+    w_length: u16,
     transfer_type: u8, // 0=no data, 2=OUT data, 3=IN data
     cycle: bool,
 ) -> Trb {
     let mut t = Trb::zero();
-    t.word[0] = (bm_request_type as u32)
-        | ((b_request as u32) << 8)
-        | ((w_value  as u32) << 16);
+    t.word[0] = (bm_request_type as u32) | ((b_request as u32) << 8) | ((w_value as u32) << 16);
     t.word[1] = (w_index as u32) | ((w_length as u32) << 16);
     t.word[2] = 8; // TRB transfer length always 8 for setup stage
     // IDT=1 (immediate data), TRT in bits [17:16]

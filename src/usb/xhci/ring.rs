@@ -15,9 +15,9 @@ pub const RING_SIZE: usize = 64;
 // ---------------------------------------------------------------------------
 
 pub struct CommandRing {
-    trbs:      *mut Trb,
-    pub phys:  u64,
-    enqueue:   usize,
+    trbs: *mut Trb,
+    pub phys: u64,
+    enqueue: usize,
     cycle_bit: bool,
 }
 
@@ -35,7 +35,12 @@ impl CommandRing {
             trbs.add(RING_SIZE).write_volatile(link);
         }
 
-        CommandRing { trbs, phys, enqueue: 0, cycle_bit: true }
+        CommandRing {
+            trbs,
+            phys,
+            enqueue: 0,
+            cycle_bit: true,
+        }
     }
 
     /// Write a TRB to the ring and advance the enqueue pointer.
@@ -44,7 +49,9 @@ impl CommandRing {
         // Set cycle bit
         trb.set_cycle(self.cycle_bit);
         let slot_phys = self.phys + (self.enqueue * core::mem::size_of::<Trb>()) as u64;
-        unsafe { self.trbs.add(self.enqueue).write_volatile(trb); }
+        unsafe {
+            self.trbs.add(self.enqueue).write_volatile(trb);
+        }
         self.enqueue += 1;
 
         // Wrap around
@@ -63,6 +70,12 @@ impl CommandRing {
     }
 }
 
+impl Default for CommandRing {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Event Ring  (producer: xHC, consumer: software)
 // ---------------------------------------------------------------------------
@@ -71,17 +84,18 @@ impl CommandRing {
 #[repr(C, align(64))]
 pub struct ErstEntry {
     pub base_addr: u64,
-    pub size:      u16,
-    _pad:          [u16; 3],
+    pub size: u16,
+    _pad: [u16; 3],
 }
 
 pub struct EventRing {
-    trbs:       *mut Trb,
-    pub phys:   u64,
-    erst:       *mut ErstEntry,
+    trbs: *mut Trb,
+    pub phys: u64,
+    #[allow(dead_code)]
+    erst: *mut ErstEntry,
     pub erst_phys: u64,
-    dequeue:    usize,
-    cycle_bit:  bool,
+    dequeue: usize,
+    cycle_bit: bool,
 }
 
 unsafe impl Send for EventRing {}
@@ -95,7 +109,7 @@ impl EventRing {
         let erst = erst_virt as *mut ErstEntry;
         unsafe {
             (*erst).base_addr = seg_phys;
-            (*erst).size      = RING_SIZE as u16;
+            (*erst).size = RING_SIZE as u16;
         }
 
         EventRing {
@@ -128,14 +142,20 @@ impl EventRing {
     }
 }
 
+impl Default for EventRing {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Transfer Ring  (one per endpoint)
 // ---------------------------------------------------------------------------
 
 pub struct TransferRing {
-    trbs:      *mut Trb,
-    pub phys:  u64,
-    enqueue:   usize,
+    trbs: *mut Trb,
+    pub phys: u64,
+    enqueue: usize,
     cycle_bit: bool,
 }
 
@@ -150,12 +170,19 @@ impl TransferRing {
             let link = link_trb(phys, true);
             trbs.add(RING_SIZE).write_volatile(link);
         }
-        TransferRing { trbs, phys, enqueue: 0, cycle_bit: true }
+        TransferRing {
+            trbs,
+            phys,
+            enqueue: 0,
+            cycle_bit: true,
+        }
     }
 
     pub fn push(&mut self, mut trb: Trb) {
         trb.set_cycle(self.cycle_bit);
-        unsafe { self.trbs.add(self.enqueue).write_volatile(trb); }
+        unsafe {
+            self.trbs.add(self.enqueue).write_volatile(trb);
+        }
         self.enqueue += 1;
         if self.enqueue == RING_SIZE {
             unsafe {
@@ -167,5 +194,11 @@ impl TransferRing {
             self.enqueue = 0;
             self.cycle_bit = !self.cycle_bit;
         }
+    }
+}
+
+impl Default for TransferRing {
+    fn default() -> Self {
+        Self::new()
     }
 }

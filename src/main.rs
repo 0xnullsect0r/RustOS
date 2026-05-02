@@ -6,17 +6,17 @@
 
 extern crate alloc;
 
-use rustos::println;
-use rustos::task::{Task, executor::Executor};
 use bootloader::{BootInfo, entry_point};
 use core::panic::PanicInfo;
+use rustos::println;
+use rustos::task::{Task, executor::Executor};
 
 entry_point!(kernel_main);
 
 fn kernel_main(boot_info: &'static BootInfo) -> ! {
+    use core::sync::atomic::Ordering;
     use rustos::allocator;
     use rustos::memory::{self, BootInfoFrameAllocator};
-    use core::sync::atomic::Ordering;
     use x86_64::VirtAddr;
 
     rustos::init();
@@ -60,8 +60,8 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 /// `USB_XHCI`, and mount any FAT32 volumes found on connected drives.
 fn init_usb_storage() {
     use rustos::pci;
-    use rustos::usb::xhci::Xhci;
     use rustos::usb::USB_XHCI;
+    use rustos::usb::xhci::Xhci;
 
     let devices = pci::enumerate();
     let dev = match pci::find_xhci(&devices) {
@@ -72,7 +72,7 @@ fn init_usb_storage() {
         }
     };
 
-    let ctrl = match Xhci::init(&dev) {
+    let ctrl = match Xhci::init(dev) {
         Some(c) => c,
         None => {
             rustos::serial_println!("[usb] XHCI init failed");
@@ -96,10 +96,10 @@ fn init_usb_storage() {
 }
 
 async fn shell_task() {
-    use rustos::task::keyboard::ScancodeStream;
-    use rustos::shell::Shell;
     use futures_util::stream::StreamExt;
     use pc_keyboard::{DecodedKey, HandleControl, Keyboard, ScancodeSet1, layouts};
+    use rustos::shell::Shell;
+    use rustos::task::keyboard::ScancodeStream;
 
     let mut scancodes = ScancodeStream::new();
     let mut keyboard = Keyboard::new(
@@ -115,17 +115,19 @@ async fn shell_task() {
     println!(" |  _ <| |_| \\__ \\ |_| |_| |___) |");
     println!(" |_| \\_\\\\__,_|___/\\__|\\___/|____/");
     println!();
-    println!("  v{}  --  type 'help' for a list of commands", env!("CARGO_PKG_VERSION"));
+    println!(
+        "  v{}  --  type 'help' for a list of commands",
+        env!("CARGO_PKG_VERSION")
+    );
     println!();
     shell.print_prompt();
 
     while let Some(scancode) = scancodes.next().await {
-        if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
-            if let Some(key) = keyboard.process_keyevent(key_event) {
-                if let DecodedKey::Unicode(c) = key {
-                    shell.handle_char(c);
-                }
-            }
+        if let Ok(Some(key_event)) = keyboard.add_byte(scancode)
+            && let Some(key) = keyboard.process_keyevent(key_event)
+            && let DecodedKey::Unicode(c) = key
+        {
+            shell.handle_char(c);
         }
     }
 }

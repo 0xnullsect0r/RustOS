@@ -2,9 +2,9 @@
 #![no_main]
 #![feature(abi_x86_interrupt)]
 
-use rustos::{QemuExitCode, exit_qemu, serial_print, serial_println};
 use core::panic::PanicInfo;
 use lazy_static::lazy_static;
+use rustos::{QemuExitCode, exit_qemu, serial_print, serial_println};
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame};
 
 #[unsafe(no_mangle)]

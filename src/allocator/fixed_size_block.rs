@@ -37,12 +37,21 @@ impl FixedSizeBlockAllocator {
             fallback_allocator: linked_list_allocator::Heap::empty(),
         }
     }
+}
 
+impl Default for FixedSizeBlockAllocator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl FixedSizeBlockAllocator {
     /// Initialize the allocator with the given heap bounds.
     ///
-    /// This function is unsafe because the caller must guarantee that the given
-    /// heap bounds are valid and that the heap is unused. This method must be
-    /// called only once.
+    /// # Safety
+    ///
+    /// The caller must guarantee that the heap bounds are valid and that the
+    /// heap is unused. This method must be called only once.
     pub unsafe fn init(&mut self, heap_start: usize, heap_size: usize) {
         unsafe {
             self.fallback_allocator.init(heap_start, heap_size);

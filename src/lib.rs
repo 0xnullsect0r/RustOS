@@ -8,17 +8,17 @@
 extern crate alloc;
 use core::panic::PanicInfo;
 
+pub mod allocator;
 pub mod arch;
 pub mod drivers;
-pub mod allocator;
-pub mod task;
-pub mod vfs;
-pub mod shell;
-pub mod pci;
-pub mod usb;
 pub mod fs;
-pub mod syscall;
+pub mod pci;
 pub mod process;
+pub mod shell;
+pub mod syscall;
+pub mod task;
+pub mod usb;
+pub mod vfs;
 
 // Re-export arch modules at the crate root for ergonomic access
 pub use arch::x86_64::gdt;
