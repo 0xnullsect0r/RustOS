@@ -299,10 +299,26 @@ fn cmd_exec(shell: &mut Shell, args: &[&str]) {
             }
         }
     };
+
+    // Initialise the process CWD to match the kernel shell's current directory.
+    *crate::syscall::PROCESS_CWD.lock() = shell.cwd.clone();
+
+    // Drain accumulated scancodes so the kernel shell doesn't replay keystrokes
+    // that the user typed while the process was running.
+    crate::task::keyboard::drain_scancode_queue();
+
     match crate::process::exec(&data) {
         Ok(code) => crate::println!("exec: process exited with code {}", code),
         Err(e) => crate::println!("exec: load error: {}", e),
     }
+
+    // Discard any bytes buffered for stdin that the process did not consume,
+    // and any scancodes accumulated during execution.
+    crate::task::keyboard::drain_stdin();
+    crate::task::keyboard::drain_scancode_queue();
+
+    // Close any file descriptors the process left open.
+    crate::syscall::fd_table::close_all();
 }
 
 fn cmd_usbscan() {

@@ -30,6 +30,7 @@ pub fn init() {
     interrupts::init_idt();
     unsafe { interrupts::PICS.lock().initialize() };
     x86_64::instructions::interrupts::enable();
+    crate::task::keyboard::init_stdin();
 }
 
 pub trait Testable {
