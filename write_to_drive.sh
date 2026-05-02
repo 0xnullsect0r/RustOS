@@ -12,7 +12,21 @@
 set -euo pipefail
 
 DRIVE=""
-GPT_SYNC_DELAY_SECONDS=1
+PARTITION_SYNC_DELAY_SECONDS=1
+
+# ---------------------------------------------------------------------------
+# Helper functions
+# ---------------------------------------------------------------------------
+reload_partition_table() {
+    local device="$1"
+    if command -v sudo &>/dev/null && [[ "$(id -u)" -ne 0 ]]; then
+        sudo blockdev --rereadpt "$device" || true
+        sudo partprobe "$device" || true
+    else
+        blockdev --rereadpt "$device" || true
+        partprobe "$device" || true
+    fi
+}
 
 # ---------------------------------------------------------------------------
 # Argument parsing
@@ -136,13 +150,7 @@ echo "Done! '$DRIVE' is ready to boot local RustOS build in UEFI mode."
 echo
 echo "Creating storage partition from remaining free space..."
 
-if command -v sudo &>/dev/null && [[ "$(id -u)" -ne 0 ]]; then
-    sudo blockdev --rereadpt "$DRIVE" || true
-    sudo partprobe "$DRIVE" || true
-else
-    blockdev --rereadpt "$DRIVE" || true
-    partprobe "$DRIVE" || true
-fi
+reload_partition_table "$DRIVE"
 
 sleep 1
 
@@ -162,16 +170,13 @@ if [[ "$PTTYPE" == "gpt" ]]; then
     echo "Repairing GPT metadata to use full target drive size..."
     if command -v sudo &>/dev/null && [[ "$(id -u)" -ne 0 ]]; then
         sudo sgdisk -e "$DRIVE"
-        sudo blockdev --rereadpt "$DRIVE" || true
-        sudo partprobe "$DRIVE" || true
     else
         sgdisk -e "$DRIVE"
-        blockdev --rereadpt "$DRIVE" || true
-        partprobe "$DRIVE" || true
     fi
+    reload_partition_table "$DRIVE"
 
     # Give the kernel a brief moment to expose the updated GPT layout.
-    sleep "$GPT_SYNC_DELAY_SECONDS"
+    sleep "$PARTITION_SYNC_DELAY_SECONDS"
     
     # Use sgdisk to add the new partition for GPT disks
     # -n 2:0:0 means: partition 2, start at next available sector, use all remaining space
@@ -180,29 +185,23 @@ if [[ "$PTTYPE" == "gpt" ]]; then
     echo "Adding storage partition using sgdisk..."
     if command -v sudo &>/dev/null && [[ "$(id -u)" -ne 0 ]]; then
         sudo sgdisk -n 2:0:0 -t 2:0700 -c 2:"rustos-storage" "$DRIVE"
-        sudo blockdev --rereadpt "$DRIVE" || true
-        sudo partprobe "$DRIVE" || true
     else
         sgdisk -n 2:0:0 -t 2:0700 -c 2:"rustos-storage" "$DRIVE"
-        blockdev --rereadpt "$DRIVE" || true
-        partprobe "$DRIVE" || true
     fi
+    reload_partition_table "$DRIVE"
 else
     # For MBR/DOS partition tables, use sfdisk
     PART_SPEC='type=c'
     if command -v sudo &>/dev/null && [[ "$(id -u)" -ne 0 ]]; then
         printf '%s\n' "$PART_SPEC" | sudo sfdisk --append "$DRIVE"
-        sudo blockdev --rereadpt "$DRIVE" || true
-        sudo partprobe "$DRIVE" || true
     else
         printf '%s\n' "$PART_SPEC" | sfdisk --append "$DRIVE"
-        blockdev --rereadpt "$DRIVE" || true
-        partprobe "$DRIVE" || true
     fi
+    reload_partition_table "$DRIVE"
 fi
 
 # Give the kernel time to create the partition device node
-sleep "$GPT_SYNC_DELAY_SECONDS"
+sleep "$PARTITION_SYNC_DELAY_SECONDS"
 
 if [[ "$DRIVE" =~ [0-9]$ ]]; then
     STORAGE_PART="${DRIVE}p2"
