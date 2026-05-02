@@ -24,6 +24,7 @@ pub fn dispatch(shell: &mut Shell, cmd: &str, args: &[&str]) {
         "meminfo" => cmd_meminfo(),
         "mount"   => cmd_mount(),
         "exec"    => cmd_exec(shell, args),
+        "usbscan" => cmd_usbscan(),
         "reboot"  => cmd_reboot(),
         other     => crate::println!("unknown command: '{}'. Type 'help' for a list.", other),
     }
@@ -48,6 +49,7 @@ fn cmd_help() {
     crate::println!("  meminfo           - Show heap memory information");
     crate::println!("  mount             - Show mounted filesystems");
     crate::println!("  exec <path>       - Execute an ELF binary from the VFS");
+    crate::println!("  usbscan           - Scan for newly plugged-in USB drives and mount them");
     crate::println!("  reboot            - Reboot the system");
 }
 
@@ -272,6 +274,16 @@ fn cmd_exec(shell: &mut Shell, args: &[&str]) {
     match crate::process::exec(&data) {
         Ok(code)  => crate::println!("exec: process exited with code {}", code),
         Err(e)    => crate::println!("exec: load error: {}", e),
+    }
+}
+
+fn cmd_usbscan() {
+    crate::println!("Scanning USB ports for new devices...");
+    let new_devs = crate::usb::scan_and_mount();
+    if new_devs == 0 {
+        crate::println!("usbscan: no new USB storage devices found");
+    } else {
+        crate::println!("usbscan: {} new device(s) mounted", new_devs);
     }
 }
 

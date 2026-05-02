@@ -56,14 +56,12 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     executor.run();
 }
 
-/// Scan PCI for an XHCI controller, initialise it, and mount any FAT32 volume at `/usb`.
+/// Scan PCI for an XHCI controller, initialise it, store it in the global
+/// `USB_XHCI`, and mount any FAT32 volumes found on connected drives.
 fn init_usb_storage() {
     use rustos::pci;
     use rustos::usb::xhci::Xhci;
-    use rustos::vfs::{VFS, Fat32Mount};
-    use rustos::fs::fat32::Fat32Fs;
-    use rustos::usb::XhciBlockDevice;
-    use alloc::boxed::Box;
+    use rustos::usb::USB_XHCI;
 
     let devices = pci::enumerate();
     let dev = match pci::find_xhci(&devices) {
@@ -82,26 +80,19 @@ fn init_usb_storage() {
         }
     };
 
-    if ctrl.devices.is_empty() {
-        rustos::serial_println!("[usb] no USB storage devices enumerated");
+    let found = ctrl.devices.len();
+    rustos::serial_println!("[usb] XHCI ready, {} device(s) enumerated", found);
+
+    // Store the controller globally so ongoing I/O and hot-plug rescans work.
+    *USB_XHCI.lock() = Some(ctrl);
+
+    if found == 0 {
+        rustos::serial_println!("[usb] no USB storage devices found at boot");
         return;
     }
 
-    rustos::serial_println!("[usb] {} device(s) found", ctrl.devices.len());
-
-    let block_dev = XhciBlockDevice { ctrl };
-    let fat32 = match Fat32Fs::new(Box::new(block_dev)) {
-        Some(fs) => fs,
-        None => {
-            rustos::serial_println!("[usb] no FAT32 volume found on USB device");
-            return;
-        }
-    };
-    let mut vfs = VFS.lock();
-    if let Some(vfs) = vfs.as_mut() {
-        vfs.mount("/usb", Box::new(Fat32Mount(fat32)));
-        println!("[usb] FAT32 volume mounted at /usb");
-    }
+    // Mount all found devices (device 0 → /usb, device 1 → /usb1, …).
+    rustos::usb::mount_storage_devices(0);
 }
 
 async fn shell_task() {

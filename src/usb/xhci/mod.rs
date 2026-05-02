@@ -755,17 +755,45 @@ impl Xhci {
 
     /// Read `count` 512-byte sectors starting at `lba` from USB device 0.
     pub fn read_sectors(&mut self, lba: u64, count: u16) -> Option<alloc::vec::Vec<u8>> {
+        self.read_sectors_dev(0, lba, count)
+    }
+
+    /// Read `count` 512-byte sectors starting at `lba` from USB device `dev_idx`.
+    pub fn read_sectors_dev(&mut self, dev_idx: usize, lba: u64, count: u16) -> Option<alloc::vec::Vec<u8>> {
         let len = count as usize * 512;
         let cdb = [
-            0x28u8,                         // READ(10) opcode
-            0,                              // LUN=0
+            0x28u8,                          // READ(10) opcode
+            0,                               // LUN=0
             (lba >> 24) as u8, (lba >> 16) as u8,
-            (lba >> 8) as u8,   lba as u8,  // LBA (big-endian)
-            0,                              // reserved
+            (lba >> 8) as u8,   lba as u8,   // LBA (big-endian)
+            0,                               // reserved
             (count >> 8) as u8, count as u8, // transfer length
-            0,                              // control
+            0,                               // control
         ];
-        self.scsi_command(0, &cdb, Some(len))
+        self.scsi_command(dev_idx, &cdb, Some(len))
+    }
+
+    /// Re-scan all ports and enumerate any newly connected devices.
+    ///
+    /// A port that has a device connected (CCS=1) but is not yet enabled (PED=0)
+    /// indicates a hot-plugged device.  Returns the number of new devices added.
+    pub fn scan_new_ports(&mut self) -> usize {
+        let before = self.devices.len();
+        for port in 0..self.max_ports {
+            let portsc = unsafe {
+                read32(self.op_base, 0x400 + (port as usize) * 0x10 + PORT_PORTSC)
+            };
+            // Connected but not yet enabled → newly plugged device
+            if portsc & PORTSC_CCS != 0 && portsc & PORTSC_PED == 0 {
+                crate::serial_println!("[xhci] hot-plug: port {} connected, enumerating", port);
+                self.reset_port(port);
+            }
+        }
+        let added = self.devices.len() - before;
+        if added > 0 {
+            crate::serial_println!("[xhci] scan_new_ports: {} new device(s)", added);
+        }
+        added
     }
 }
 
