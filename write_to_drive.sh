@@ -6,7 +6,7 @@
 #
 # Requirements:
 #   - cargo + Rust nightly toolchain
-#   - dd (coreutils), lsblk, sfdisk, mkfs.fat
+#   - dd (coreutils), lsblk, sfdisk, sgdisk, mkfs.fat
 #   - Root privileges (or write access to the target drive)
 
 set -euo pipefail
@@ -152,6 +152,24 @@ if [[ -z "$PTTYPE" ]]; then
 fi
 
 if [[ "$PTTYPE" == "gpt" ]]; then
+    if ! command -v sgdisk &>/dev/null; then
+        echo "Error: detected GPT disk image, but required tool 'sgdisk' is not installed." >&2
+        echo "Install it (usually package: gdisk) and re-run." >&2
+        exit 1
+    fi
+
+    echo "Repairing GPT metadata to use full target drive size..."
+    if command -v sudo &>/dev/null && [[ "$(id -u)" -ne 0 ]]; then
+        sudo sgdisk -e "$DRIVE"
+        sudo blockdev --rereadpt "$DRIVE" || true
+        sudo partprobe "$DRIVE" || true
+    else
+        sgdisk -e "$DRIVE"
+        blockdev --rereadpt "$DRIVE" || true
+        partprobe "$DRIVE" || true
+    fi
+
+    sleep 1
     PART_SPEC='type=0700,name="rustos-storage"'
 else
     PART_SPEC='type=c'
