@@ -15,6 +15,7 @@ pub mod drivers;
 pub mod fs;
 pub mod pci;
 pub mod process;
+pub mod shell;
 pub mod syscall;
 pub mod task;
 pub mod usb;

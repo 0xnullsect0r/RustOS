@@ -155,68 +155,28 @@ fn install_rsh_binary() {
     }
 }
 
-/// Launches `/bin/rsh` as the init shell process and restarts it on exit.
+/// Runs the built-in kernel shell using the framebuffer output.
+/// This provides a simple command interface without launching an external process.
 fn launch_rsh() -> ! {
-    let embedded_rsh = include_bytes!(env!("RSH_ELF_PATH"));
-    rustos::serial_println!("[init] Launching /bin/rsh...");
-    println!("RustOS v{} — launching /bin/rsh", env!("CARGO_PKG_VERSION"));
+    rustos::serial_println!("[init] Starting built-in kernel shell...");
+    println!("\n=== RustOS Built-in Shell ===");
+    println!("Type 'help' for available commands\n");
     
-    const MAX_CONSECUTIVE_FAILURES: usize = 10;
-    // Approximate delay: ~10-20ms on modern CPUs, prevents tight loop resource exhaustion
-    const RETRY_DELAY_ITERATIONS: usize = 10_000_000;
-    let mut consecutive_failures = 0;
+    let mut shell = rustos::shell::Shell::new();
+    shell.print_prompt();
     
     loop {
-        let from_vfs = {
-            let mut guard = rustos::vfs::VFS.lock();
-            let Some(vfs) = guard.as_mut() else {
-                println!("[init] VFS not initialized");
-                rustos::hlt_loop();
-            };
-            vfs.read_file("/bin/rsh")
-        };
-        let data = match from_vfs {
-            Ok(d) => d,
-            Err(e) => {
-                println!(
-                    "[init] /bin/rsh missing in filesystem ({}), using embedded fallback",
-                    e
-                );
-                embedded_rsh.to_vec()
-            }
-        };
-        match rustos::process::exec(&data) {
-            Ok(code) => {
-                println!("[init] /bin/rsh exited with code {}", code);
-                consecutive_failures = 0; // Reset on successful execution
-            }
-            Err(e) => {
-                println!("[init] /bin/rsh failed to start: {}", e);
-                
-                // Mapping failures indicate critical errors that won't be fixed by retrying
-                // (out of memory, corrupted ELF, or page table issues)
-                if e.contains("mapping failed") {
-                    println!("[init] Memory mapping failure indicates a critical system error");
-                    println!("[init] This could be due to: insufficient memory, corrupted binary, or page table corruption");
-                    println!("[init] Halting system - retry would not help");
-                    rustos::hlt_loop();
-                }
-                
-                consecutive_failures += 1;
-                
-                if consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
-                    println!("[init] Too many consecutive failures ({}), halting system", consecutive_failures);
-                    rustos::hlt_loop();
-                }
-                
-                // Add a delay to prevent tight loop that could exhaust resources
-                println!("[init] Waiting before retry... ({}/{})", consecutive_failures, MAX_CONSECUTIVE_FAILURES);
-                for _ in 0..RETRY_DELAY_ITERATIONS {
-                    core::hint::spin_loop();
+        // Wait for keyboard input
+        if let Some(byte) = rustos::task::keyboard::read_input_byte() {
+            if let Ok(c) = core::str::from_utf8(&[byte]) {
+                if let Some(ch) = c.chars().next() {
+                    shell.handle_char(ch);
                 }
             }
+        } else {
+            // No input available, yield CPU
+            x86_64::instructions::hlt();
         }
-        println!("[init] restarting /bin/rsh");
     }
 }
 
