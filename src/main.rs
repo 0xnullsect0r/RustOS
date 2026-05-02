@@ -57,6 +57,15 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             .expect("heap initialization failed");
     }
 
+    // Initialise the UEFI framebuffer for text output.
+    // Must happen after heap init (lazy_static allocates) but before any
+    // println! call that needs to be visible on screen.
+    if let Some(fb) = boot_info.framebuffer.as_mut() {
+        let info = fb.info();
+        let ptr = fb.buffer_mut().as_mut_ptr();
+        rustos::drivers::framebuffer::init(ptr, info);
+    }
+
     // Initialise VFS
     rustos::vfs::init();
 

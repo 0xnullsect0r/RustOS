@@ -26,6 +26,10 @@ pub fn dispatch(shell: &mut Shell, cmd: &str, args: &[&str]) {
         "exec" => cmd_exec(shell, args),
         "usbscan" => cmd_usbscan(),
         "reboot" => cmd_reboot(),
+        // Allow  ./path  or  /abs/path  as a shorthand for exec
+        other if other.starts_with("./") || other.starts_with('/') => {
+            cmd_run_path(shell, other, args);
+        }
         other => crate::println!("unknown command: '{}'. Type 'help' for a list.", other),
     }
 }
@@ -49,6 +53,7 @@ fn cmd_help() {
     crate::println!("  meminfo           - Show heap memory information");
     crate::println!("  mount             - Show mounted filesystems");
     crate::println!("  exec <path>       - Execute an ELF binary from the VFS");
+    crate::println!("  ./path [args]     - Execute a file (shorthand for exec)");
     crate::println!("  usbscan           - Scan for newly plugged-in USB drives and mount them");
     crate::println!("  reboot            - Reboot the system");
 }
@@ -58,6 +63,14 @@ fn cmd_echo(args: &[&str]) {
 }
 
 fn cmd_clear() {
+    // Clear the framebuffer when it is active
+    if let Some(mut guard) = crate::drivers::framebuffer::FRAMEBUFFER.try_lock() {
+        if let Some(ref mut fb) = *guard {
+            fb.clear();
+            return;
+        }
+    }
+    // Fallback: clear legacy VGA text buffer
     crate::drivers::vga::WRITER.lock().clear_screen();
 }
 
@@ -89,6 +102,28 @@ fn parse_color(s: &str) -> Option<Color> {
     }
 }
 
+/// Map a VGA `Color` value to an RGB triple for the framebuffer.
+fn color_to_rgb(c: Color) -> [u8; 3] {
+    match c {
+        Color::Black     => [0x00, 0x00, 0x00],
+        Color::Blue      => [0x00, 0x00, 0xAA],
+        Color::Green     => [0x00, 0xAA, 0x00],
+        Color::Cyan      => [0x00, 0xAA, 0xAA],
+        Color::Red       => [0xAA, 0x00, 0x00],
+        Color::Magenta   => [0xAA, 0x00, 0xAA],
+        Color::Brown     => [0xAA, 0x55, 0x00],
+        Color::LightGray => [0xAA, 0xAA, 0xAA],
+        Color::DarkGray  => [0x55, 0x55, 0x55],
+        Color::LightBlue => [0x55, 0x55, 0xFF],
+        Color::LightGreen => [0x55, 0xFF, 0x55],
+        Color::LightCyan => [0x55, 0xFF, 0xFF],
+        Color::LightRed  => [0xFF, 0x55, 0x55],
+        Color::Pink      => [0xFF, 0x55, 0xFF],
+        Color::Yellow    => [0xFF, 0xFF, 0x55],
+        Color::White     => [0xFF, 0xFF, 0xFF],
+    }
+}
+
 fn cmd_color(shell: &mut Shell, args: &[&str]) {
     if args.len() < 2 {
         crate::println!("Usage: color <fg> <bg>");
@@ -114,7 +149,17 @@ fn cmd_color(shell: &mut Shell, args: &[&str]) {
     };
     shell.fg_color = fg;
     shell.bg_color = bg;
-    crate::drivers::vga::WRITER.lock().set_color(fg, bg);
+
+    // Apply to framebuffer (primary output on UEFI systems)
+    if let Some(mut guard) = crate::drivers::framebuffer::FRAMEBUFFER.try_lock() {
+        if let Some(ref mut fb) = *guard {
+            fb.set_colors(color_to_rgb(fg), color_to_rgb(bg));
+        }
+    }
+    // Also apply to legacy VGA text buffer as a best-effort
+    if let Some(mut guard) = crate::drivers::vga::WRITER.try_lock() {
+        guard.set_color(fg, bg);
+    }
 }
 
 fn cmd_pwd(shell: &Shell) {
@@ -312,6 +357,38 @@ fn cmd_usbscan() {
         crate::println!("usbscan: no new USB storage devices found");
     } else {
         crate::println!("usbscan: {} new device(s) mounted", new_devs);
+    }
+}
+
+/// Handler for  `./relative/path`  and  `/absolute/path`  style execution.
+///
+/// Strips the leading `./` (if present), resolves the path relative to `cwd`,
+/// reads the file from the VFS, and executes it as an ELF64 binary.
+/// Argument passing to user programs is not yet implemented.
+fn cmd_run_path(shell: &mut Shell, path_str: &str, args: &[&str]) {
+    let _ = args; // argument passing to ELF programs not yet implemented
+    let input = if let Some(rest) = path_str.strip_prefix("./") {
+        rest
+    } else {
+        path_str
+    };
+    let path = shell.resolve_path(input);
+    let data = {
+        let result = VFS
+            .lock()
+            .as_mut()
+            .and_then(|vfs| vfs.read_file(&path).ok());
+        match result {
+            Some(d) => d,
+            None => {
+                crate::println!("{}: not found", path);
+                return;
+            }
+        }
+    };
+    match crate::process::exec(&data) {
+        Ok(code) => crate::println!("process exited with code {}", code),
+        Err(e) => crate::println!("{}: {}", path, e),
     }
 }
 
