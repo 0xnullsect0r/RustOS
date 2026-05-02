@@ -9,8 +9,8 @@ extern crate alloc;
 use bootloader_api::config::Mapping;
 use bootloader_api::{BootInfo, BootloaderConfig, entry_point};
 use core::panic::PanicInfo;
+use rustos::memory::PHYS_MEM_OFFSET;
 use rustos::println;
-use rustos::task::{Task, executor::Executor};
 
 const BOOTLOADER_CONFIG: BootloaderConfig = {
     let mut config = BootloaderConfig::new_default();
@@ -36,7 +36,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     );
 
     // Store globals for use by drivers and process loader
-    memory::PHYS_MEM_OFFSET.store(
+    PHYS_MEM_OFFSET.store(
         boot_info.physical_memory_offset.into_option().unwrap(),
         Ordering::Relaxed,
     );
@@ -59,16 +59,16 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 
     // Initialise VFS
     rustos::vfs::init();
+    install_rsh_binary();
 
     // Probe PCI for XHCI and mount USB FAT32
     init_usb_storage();
+    rustos::task::keyboard::init();
 
     #[cfg(test)]
     test_main();
 
-    let mut executor = Executor::new();
-    executor.spawn(Task::new(shell_task()));
-    executor.run();
+    launch_rsh();
 }
 
 /// Scan PCI for an XHCI controller, initialise it, store it in the global
@@ -106,44 +106,61 @@ fn init_usb_storage() {
         return;
     }
 
-    // Mount all found devices (device 0 → /usb, device 1 → /usb1, …).
+    if !rustos::usb::mount_boot_storage_root() {
+        rustos::serial_println!("[usb] no boot storage partition mounted as root");
+    }
+
+    // Mount all found devices under /usb* (device 0 → /usb, device 1 → /usb1, …).
     rustos::usb::mount_storage_devices(0);
 }
 
-async fn shell_task() {
-    use futures_util::stream::StreamExt;
-    use pc_keyboard::{DecodedKey, HandleControl, Keyboard, ScancodeSet1, layouts};
-    use rustos::shell::Shell;
-    use rustos::task::keyboard::ScancodeStream;
-
-    let mut scancodes = ScancodeStream::new();
-    let mut keyboard = Keyboard::new(
-        ScancodeSet1::new(),
-        layouts::Us104Key,
-        HandleControl::Ignore,
-    );
-    let mut shell = Shell::new();
-
-    println!("  ____             _    ___  ____");
-    println!(" |  _ \\ _   _ ___| |_ / _ \\/ ___|");
-    println!(" | |_) | | | / __| __| | | \\___ \\");
-    println!(" |  _ <| |_| \\__ \\ |_| |_| |___) |");
-    println!(" |_| \\_\\\\__,_|___/\\__|\\___/|____/");
-    println!();
-    println!(
-        "  v{}  --  type 'help' for a list of commands",
-        env!("CARGO_PKG_VERSION")
-    );
-    println!();
-    shell.print_prompt();
-
-    while let Some(scancode) = scancodes.next().await {
-        if let Ok(Some(key_event)) = keyboard.add_byte(scancode)
-            && let Some(key) = keyboard.process_keyevent(key_event)
-            && let DecodedKey::Unicode(c) = key
-        {
-            shell.handle_char(c);
+fn install_rsh_binary() {
+    let rsh = include_bytes!(env!("RSH_ELF_PATH"));
+    let mut guard = rustos::vfs::VFS.lock();
+    let Some(vfs) = guard.as_mut() else {
+        println!("[init] VFS not initialized; cannot install /bin/rsh");
+        return;
+    };
+    match vfs.mkdir("/bin") {
+        Ok(()) | Err(rustos::vfs::VfsError::AlreadyExists) => {}
+        Err(e) => {
+            println!("[init] failed to create /bin: {}", e);
+            return;
         }
+    }
+    if let Err(e) = vfs.write_file("/bin/rsh", rsh) {
+        println!("[init] failed to install /bin/rsh: {}", e);
+    }
+}
+
+/// Launches `/bin/rsh` as the init shell process and restarts it on exit.
+fn launch_rsh() -> ! {
+    let embedded_rsh = include_bytes!(env!("RSH_ELF_PATH"));
+    println!("RustOS v{} — launching /bin/rsh", env!("CARGO_PKG_VERSION"));
+    loop {
+        let from_vfs = {
+            let mut guard = rustos::vfs::VFS.lock();
+            let Some(vfs) = guard.as_mut() else {
+                println!("[init] VFS not initialized");
+                rustos::hlt_loop();
+            };
+            vfs.read_file("/bin/rsh")
+        };
+        let data = match from_vfs {
+            Ok(d) => d,
+            Err(e) => {
+                println!(
+                    "[init] /bin/rsh missing in filesystem ({}), using embedded fallback",
+                    e
+                );
+                embedded_rsh.to_vec()
+            }
+        };
+        match rustos::process::exec(&data) {
+            Ok(code) => println!("[init] /bin/rsh exited with code {}", code),
+            Err(e) => println!("[init] /bin/rsh failed to start: {}", e),
+        }
+        println!("[init] restarting /bin/rsh");
     }
 }
 

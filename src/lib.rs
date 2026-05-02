@@ -10,11 +10,11 @@ use core::panic::PanicInfo;
 
 pub mod allocator;
 pub mod arch;
+pub mod bin_commands;
 pub mod drivers;
 pub mod fs;
 pub mod pci;
 pub mod process;
-pub mod shell;
 pub mod syscall;
 pub mod task;
 pub mod usb;

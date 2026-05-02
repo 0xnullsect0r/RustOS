@@ -22,6 +22,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Install nightly Rust + components
         uses: dtolnay/rust-toolchain@nightly
@@ -122,7 +124,7 @@ jobs:
 
             ### What's in this release
             - **UEFI bootloader** — boots on any modern UEFI system without CSM/legacy mode
-            - Interactive shell (`help`, `ls`, `cd`, `cat`, `write`, `cp`, `mv`, `exec`, `usbscan`, …)
+            - Userspace `rsh` shell (`/bin/rsh`) launched by the kernel at boot
             - ELF64 process loader — run programs from USB with `exec /usb/yourprogram`
             - USB mass storage (XHCI) — plug in a USB drive and run `usbscan` to mount it at `/usb`
             - FAT32 read support for USB drives

@@ -9,10 +9,28 @@ use futures_util::{
     stream::{Stream, StreamExt},
     task::AtomicWaker,
 };
-use pc_keyboard::{DecodedKey, HandleControl, Keyboard, ScancodeSet1, layouts};
+use lazy_static::lazy_static;
+use pc_keyboard::{DecodedKey, HandleControl, KeyCode, Keyboard, ScancodeSet1, layouts};
+use spin::Mutex;
 
 static SCANCODE_QUEUE: OnceCell<ArrayQueue<u8>> = OnceCell::uninit();
 static WAKER: AtomicWaker = AtomicWaker::new();
+lazy_static! {
+    static ref KEYBOARD_DECODER: Mutex<Keyboard<layouts::Us104Key, ScancodeSet1>> =
+        Mutex::new(Keyboard::new(
+            ScancodeSet1::new(),
+            layouts::Us104Key,
+            HandleControl::Ignore,
+        ));
+}
+
+pub fn init() {
+    if SCANCODE_QUEUE.try_get().is_err() {
+        SCANCODE_QUEUE
+            .try_init_once(|| ArrayQueue::new(100))
+            .expect("failed to initialize keyboard scancode queue");
+    }
+}
 
 /// Called by the keyboard interrupt handler
 ///
@@ -35,9 +53,7 @@ pub struct ScancodeStream {
 
 impl ScancodeStream {
     pub fn new() -> Self {
-        SCANCODE_QUEUE
-            .try_init_once(|| ArrayQueue::new(100))
-            .expect("ScancodeStream::new should only be called once");
+        init();
         ScancodeStream { _private: () }
     }
 }
@@ -89,5 +105,18 @@ pub async fn print_keypresses() {
                 DecodedKey::RawKey(key) => print!("{:?}", key),
             }
         }
+    }
+}
+
+pub fn read_input_byte() -> Option<u8> {
+    let queue = SCANCODE_QUEUE.try_get().ok()?;
+    let scancode = queue.pop()?;
+    let mut keyboard = KEYBOARD_DECODER.lock();
+    let key_event = keyboard.add_byte(scancode).ok()??;
+    let key = keyboard.process_keyevent(key_event)?;
+    match key {
+        DecodedKey::Unicode(c) if c.is_ascii() => Some(c as u8),
+        DecodedKey::RawKey(KeyCode::Backspace) => Some(0x08),
+        _ => None,
     }
 }

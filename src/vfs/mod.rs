@@ -174,16 +174,16 @@ struct MountPoint {
     fs: Box<dyn Filesystem>,
 }
 
-/// Global VFS state: the root RamFs + any additional mount points.
+/// Global VFS state: the root filesystem + any additional mount points.
 pub struct Vfs {
-    root: RamFs,
+    root: Box<dyn Filesystem>,
     mounts: Vec<MountPoint>,
 }
 
 impl Vfs {
     pub fn new() -> Self {
         Vfs {
-            root: RamFs::new(),
+            root: Box::new(RamFs::new()),
             mounts: Vec::new(),
         }
     }
@@ -196,6 +196,11 @@ impl Default for Vfs {
 }
 
 impl Vfs {
+    /// Replace the root filesystem mounted at `/`.
+    pub fn set_root(&mut self, fs: Box<dyn Filesystem>) {
+        self.root = fs;
+    }
+
     /// Mount `fs` at `mount_path` (e.g. "/usb").
     pub fn mount(&mut self, mount_path: &str, fs: Box<dyn Filesystem>) {
         // Ensure the mount point directory exists in root
@@ -248,7 +253,7 @@ impl Vfs {
             (&mut *self.mounts[idx].fs, rel)
         } else {
             let norm2 = norm.clone();
-            (&mut self.root, norm2)
+            (&mut *self.root, norm2)
         }
     }
 
@@ -318,7 +323,7 @@ impl Vfs {
             if let Some(idx) = src_idx {
                 self.mounts[idx].fs.rename(&rel_src, &rel_dst)
             } else {
-                self.root.rename(&rel_src, &rel_dst)
+                self.root.as_mut().rename(&rel_src, &rel_dst)
             }
         }
     }

@@ -1,11 +1,11 @@
 # RustOS
 
-A minimal x86_64 operating system kernel written in Rust, featuring an interactive shell,
+A minimal x86_64 operating system kernel written in Rust, featuring a userspace shell (`rsh`),
 virtual filesystem, USB mass-storage support, and a Rust userspace runtime.
 
 Built on the foundation of [Philipp Oppermann's "Writing an OS in Rust"](https://os.phil-opp.com/)
 tutorial series (through post-12), then extended with a modular architecture, VFS layer,
-XHCI USB driver, FAT32 filesystem, ELF process loader, and a full interactive shell.
+XHCI USB driver, FAT32 filesystem, ELF process loader, and a userspace shell environment.
 
 ## Features
 
@@ -15,9 +15,8 @@ XHCI USB driver, FAT32 filesystem, ELF process loader, and a full interactive sh
 - **GDT + IDT** — segmentation, interrupt/exception handlers
 - **Memory paging** + **heap allocator** (fixed-size block allocator)
 - **Async executor** — keyboard input handled via `async/await`
-- **Interactive shell** with 19 built-in commands
-- **VFS with mount table** — RamFs (root `/`) + FAT32 mounts side-by-side
-- **In-memory RAM filesystem** — create, read, write, copy, move, delete files and directories
+- **Userspace shell (`rsh`)** launched from `/bin/rsh` at boot
+- **VFS with mount table** — FAT32 storage partition as root `/` + additional FAT32 mounts
 - **PCI enumeration** — finds XHCI host controllers on the PCI bus
 - **XHCI USB 3.x driver** — full controller init, port enumeration, control + bulk transfers
 - **USB Mass Storage (BOT/SCSI)** — reads sectors from USB flash drives
@@ -27,29 +26,23 @@ XHCI USB driver, FAT32 filesystem, ELF process loader, and a full interactive sh
 - **`int 0x80` syscall interface** — `SYS_READ`, `SYS_WRITE`, `SYS_EXIT`, `SYS_OPEN`, `SYS_CLOSE`
 - **[rustos-rt](../../tree/rustos-rt)** — companion Rust userspace runtime crate (separate branch)
 
-## Shell commands
+## Shell (`rsh`)
 
-| Command | Description |
-|---------|-------------|
-| `help` | List all commands |
-| `echo <text>` | Print text to screen |
-| `clear` | Clear the screen |
-| `uname` | Show OS name and version |
-| `color <fg> <bg>` | Change text colour (black/blue/green/cyan/red/magenta/yellow/white/…) |
-| `pwd` | Print working directory |
-| `ls [path]` | List directory contents |
-| `cd <path>` | Change directory |
-| `mkdir <path>` | Create directory |
-| `rm <path>` | Remove file or empty directory |
-| `cat <path>` | Print file contents |
-| `write <path> <text>` | Write text to a file (overwrites) |
-| `cp <src> <dst>` | Copy a file (works across filesystems, e.g. `/usb` → `/`) |
-| `mv <src> <dst>` | Move / rename a file or directory |
-| `meminfo` | Show heap usage statistics |
-| `mount` | Show mounted filesystems |
-| `exec <path>` | Execute an ELF binary loaded from the VFS |
-| `usbscan` | Scan for newly plugged-in USB drives and mount them |
-| `reboot` | Reboot the machine |
+RustOS now uses [`rsh`](https://github.com/RustOS-Dev/rsh) as its shell.
+The repository is included as a git submodule at:
+
+```text
+third_party/rsh
+```
+
+During `cargo build`/`cargo run`, RustOS builds `third_party/rsh` and launches it
+as the init shell (`/bin/rsh`, with an embedded fallback if missing from storage).
+
+Legacy kernel commands are exposed as `/bin/*` executables for `rsh` execution:
+`/bin/help`, `/bin/echo`, `/bin/clear`, `/bin/uname`, `/bin/color`, `/bin/pwd`,
+`/bin/ls`, `/bin/cd`, `/bin/mkdir`, `/bin/rm`, `/bin/cat`, `/bin/write`,
+`/bin/cp`, `/bin/mv`, `/bin/meminfo`, `/bin/mount`, `/bin/exec`, `/bin/usbscan`,
+`/bin/reboot`.
 
 ## USB flash drive workflow
 
@@ -57,14 +50,15 @@ XHCI USB driver, FAT32 filesystem, ELF process loader, and a full interactive sh
 
 ```
 # Boot RustOS from a USB stick.
-# The boot drive is automatically enumerated and mounted at /usb.
+# The boot drive's partition 2 is mounted as root filesystem (/).
+# Partition 1 is mounted at /usb.
 
 # Plug in a second USB drive with your files, then in the shell:
 usbscan               # detects the new drive, mounts it at /usb1
 
 ls /usb1              # browse the FAT32 volume
 cat /usb1/readme.txt  # read a file
-cp /usb1/hello /hello # copy to the in-memory filesystem
+cp /usb1/hello /hello # copy to root filesystem
 exec /hello           # run an ELF binary
 ```
 
@@ -138,13 +132,13 @@ src/
 │   ├── mod.rs            # Filesystem trait, mount table, VFS global
 │   └── ramfs.rs          # In-memory RAM filesystem
 ├── process/              # ELF loader, process exec
-├── syscall/              # int 0x80 dispatcher
-└── shell/
-    ├── mod.rs            # Shell struct, line editor, command dispatch
-    └── commands.rs       # All built-in command implementations
+└── syscall/              # int 0x80 dispatcher
 
 crates/
 └── rustos-rt/            # Userspace Rust runtime (also on branch rustos-rt)
+
+third_party/
+└── rsh/                  # Shell submodule source (userspace program)
 ```
 
 ## Building and running
@@ -183,8 +177,8 @@ sudo dd if=target/x86_64-rustos/debug/bootimage-rustos.bin of=/dev/sdX bs=4M sta
 ```
 
 > **Note:** After writing, `lsblk` will show your USB drive with **no partitions** — this is
-> expected. The raw BIOS bootimage has no partition table; the MBR bootloader occupies the first
-> sector directly. The image is also small (~364 KB); the rest of the drive is unused blank space.
+> outdated for the release installer script. `write_to_drive.sh` now creates a second FAT32
+> storage partition that occupies the remaining disk space and is used as root (`/`) in RustOS.
 
 ## Releases
 
@@ -201,7 +195,13 @@ GitHub Actions will:
 
 ### Writing the release image to a USB drive
 
-Download `rustos-<version>.img` from the [Releases page](../../releases), then:
+Use the local installer script (builds locally, then writes to USB):
+
+```sh
+./write_to_drive.sh --drive /dev/sdX
+```
+
+or write a release image manually:
 
 **Linux / macOS:**
 ```sh
@@ -210,8 +210,9 @@ sudo dd if=rustos-v0.1.0.img of=/dev/sdX bs=4M status=progress && sync
 Replace `/dev/sdX` with your USB device (e.g. `/dev/sdb`). **Do NOT use a partition**
 (e.g. `/dev/sdb1`) — write to the whole device.
 
-After `dd` finishes, `lsblk` will show the USB drive with **no partitions listed**. That is
-normal — the bootimage does not use a partition table.
+After `write_to_drive.sh` finishes, `lsblk` will show:
+- partition 1 (boot/EFI)
+- partition 2 (`RUSTOS_ROOT`, FAT32 storage/root filesystem)
 
 **Windows (Rufus):** Select the `.img` file and choose **"DD Image"** write mode.
 
@@ -237,3 +238,11 @@ Every push and pull request runs:
 - `cargo fmt --check` — formatting
 - `cargo clippy` — lints
 - `cargo test` — integration tests under QEMU
+
+## Submodules
+
+Clone/update with submodules so `rsh` is available:
+
+```sh
+git submodule update --init --recursive
+```
