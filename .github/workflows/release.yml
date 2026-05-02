@@ -15,7 +15,7 @@ env:
 
 jobs:
   build-image:
-    name: Build Bootable Disk Image
+    name: Build Bootable UEFI Disk Image
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -38,17 +38,14 @@ jobs:
           key: ${{ runner.os }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-release-
 
-      - name: Install bootimage
-        run: cargo install bootimage
+      - name: Build kernel
+        run: cargo build --release
 
-      - name: Build kernel with bootimage
-        run: cargo bootimage --release
-
-      - name: Locate disk image
-        id: bins
+      - name: Locate kernel ELF
+        id: kernel
         run: |
-          BIN=$(find target -name "bootimage-rustos.bin" | head -1)
-          echo "bin=$BIN" >> "$GITHUB_OUTPUT"
+          ELF=$(find target -path "*/release/rustos" -not -name "*.d" | head -1)
+          echo "elf=$ELF" >> "$GITHUB_OUTPUT"
 
       - name: Determine release tag
         id: tag
@@ -59,8 +56,12 @@ jobs:
             echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Rename image with version
-        run: cp "${{ steps.bins.outputs.bin }}" rustos-${{ steps.tag.outputs.tag }}.img
+      - name: Build UEFI disk image
+        run: |
+          KERNEL_ABS="$(pwd)/${{ steps.kernel.outputs.elf }}"
+          OUTPUT_ABS="$(pwd)/rustos-${{ steps.tag.outputs.tag }}.img"
+          cd crates/create-image
+          cargo run --release -- "$KERNEL_ABS" "$OUTPUT_ABS"
 
       - name: Upload disk image artifact
         uses: actions/upload-artifact@v4
@@ -77,25 +78,41 @@ jobs:
             ## RustOS ${{ steps.tag.outputs.tag }}
 
             ### Download
-            - **`rustos-${{ steps.tag.outputs.tag }}.img`** — raw x86_64 disk image (BIOS bootloader)
+            - **`rustos-${{ steps.tag.outputs.tag }}.img`** — UEFI bootable x86_64 disk image (GPT + EFI System Partition)
 
-            ### Booting from USB (recommended)
+            ### Flashing to USB (recommended)
 
-            Write the image directly to a USB drive — this is the most reliable method:
+            Use the provided helper script to automatically download and flash this release:
 
-            **Linux / macOS:**
             ```bash
-            sudo dd if=rustos-${{ steps.tag.outputs.tag }}.img of=/dev/sdX bs=4M status=progress && sync
+            curl -fsSL https://raw.githubusercontent.com/0xnullsect0r/RustOS/main/write_to_drive.sh | bash -s -- --drive /dev/sdX
             ```
+
+            Or download and run it manually:
+
+            ```bash
+            ./write_to_drive.sh --drive /dev/sdX
+            ```
+
             Replace `/dev/sdX` with your USB device (e.g. `/dev/sdb`). **Do NOT use a partition** (e.g. `/dev/sdb1`).
 
             **Windows (Rufus):** Open Rufus, select the `.img` file, choose "DD image" mode.
 
-            Then boot your PC from that USB drive. In your BIOS/UEFI settings, enable **Legacy/CSM boot** or **BIOS compatibility mode** (this kernel uses a BIOS bootloader; UEFI-only systems require CSM).
+            Ensure your system is set to boot in **UEFI mode** (not Legacy/CSM). CSM/legacy BIOS is no longer required.
 
-            ### Testing in QEMU
+            ### Testing in QEMU (UEFI)
+
+            Install OVMF firmware first:
+            ```bash
+            sudo apt-get install ovmf        # Debian/Ubuntu
+            sudo pacman -S edk2-ovmf         # Arch
+            brew install qemu                # macOS (bundles OVMF)
+            ```
+
+            Then run:
             ```bash
             qemu-system-x86_64 \
+              -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE.fd \
               -drive format=raw,file=rustos-${{ steps.tag.outputs.tag }}.img \
               -device qemu-xhci,id=xhci \
               -drive if=none,id=usbdisk,file=YOUR_FAT32_DISK.img,format=raw \
@@ -104,6 +121,7 @@ jobs:
             ```
 
             ### What's in this release
+            - **UEFI bootloader** — boots on any modern UEFI system without CSM/legacy mode
             - Interactive shell (`help`, `ls`, `cd`, `cat`, `write`, `cp`, `mv`, `exec`, `usbscan`, …)
             - ELF64 process loader — run programs from USB with `exec /usb/yourprogram`
             - USB mass storage (XHCI) — plug in a USB drive and run `usbscan` to mount it at `/usb`

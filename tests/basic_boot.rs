@@ -4,11 +4,13 @@
 #![test_runner(rustos::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 
+use bootloader_api::{BootInfo, entry_point};
 use core::panic::PanicInfo;
 use rustos::println;
 
-#[unsafe(no_mangle)] // don't mangle the name of this function
-pub extern "C" fn _start() -> ! {
+entry_point!(main);
+
+fn main(_boot_info: &'static mut BootInfo) -> ! {
     test_main();
 
     loop {}
