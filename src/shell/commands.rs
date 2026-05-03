@@ -58,6 +58,8 @@ fn cmd_echo(args: &[&str]) {
 }
 
 fn cmd_clear() {
+    // The VGA module owns the console compatibility API; it clears whichever
+    // backend is active, including the UEFI framebuffer on real hardware.
     crate::drivers::vga::clear_screen();
 }
 

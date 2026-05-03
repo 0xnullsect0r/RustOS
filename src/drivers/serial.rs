@@ -66,6 +66,9 @@ fn write_byte(byte: u8) {
                 break;
             }
         }
+        // If absent hardware never reports ready, still attempt the byte once.
+        // This keeps serial diagnostic output best-effort rather than blocking
+        // boot on real laptops without COM1.
         Port::<u8>::new(COM1_PORT).write(byte);
     }
 }

@@ -105,7 +105,9 @@ pub fn map_user_segment(virt_base: u64, size: usize) -> Result<(), MapToError<Si
         let virt = VirtAddr::new(virt_base + i * 4096);
         let page = Page::<Size4KiB>::containing_address(virt);
 
-        // Check if page is already mapped (can happen when ELF segments overlap at page boundaries)
+        // ELF PT_LOAD segments are allowed to share boundary pages. If a prior
+        // segment already mapped this page, keep the existing mapping and let
+        // the loader copy the next segment's bytes into the shared page.
         if mapper.translate_page(page).is_ok() {
             continue;
         }
