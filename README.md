@@ -26,17 +26,21 @@ XHCI USB driver, FAT32 filesystem, ELF process loader, and a userspace shell env
 - **`int 0x80` syscall interface** — `SYS_READ`, `SYS_WRITE`, `SYS_EXIT`, `SYS_OPEN`, `SYS_CLOSE`
 - **[rustos-rt](../../tree/rustos-rt)** — companion Rust userspace runtime crate (separate branch)
 
-## Shell (`rsh`)
+## Shell
 
-RustOS now uses [`rsh`](https://github.com/RustOS-Dev/rsh) as its shell.
-The repository is included as a git submodule at:
+RustOS boots directly into the built-in kernel shell. This keeps the default
+real-hardware boot path independent from the experimental userspace process
+loader and avoids restarting a failing init process in a tight loop.
+
+The experimental [`rsh`](https://github.com/RustOS-Dev/rsh) userspace shell is
+kept as a git submodule at:
 
 ```text
 third_party/rsh
 ```
 
-During `cargo build`/`cargo run`, RustOS builds `third_party/rsh` and launches it
-as the init shell (`/bin/rsh`, with an embedded fallback if missing from storage).
+It is not built or launched by default during kernel startup. Use the built-in
+`exec` command to test userspace ELF binaries explicitly.
 
 Legacy kernel commands are exposed as `/bin/*` executables for `rsh` execution:
 `/bin/help`, `/bin/echo`, `/bin/clear`, `/bin/uname`, `/bin/color`, `/bin/pwd`,
@@ -110,14 +114,15 @@ The `[package.metadata.bootimage] run-args` in `Cargo.toml` already include:
 
 ```
 src/
-├── main.rs               # Kernel entry point, spawns shell task
+├── main.rs               # Kernel entry point, initializes hardware and built-in shell
 ├── lib.rs                # Crate root, init(), test infrastructure
 ├── arch/x86_64/
 │   ├── gdt.rs            # Global Descriptor Table
 │   ├── interrupts.rs     # IDT, exception + IRQ handlers
 │   └── memory/           # Page table init, frame allocators, DMA alloc
 ├── drivers/
-│   ├── vga.rs            # VGA text buffer driver
+│   ├── framebuffer.rs    # UEFI GOP framebuffer text output
+│   ├── vga.rs            # VGA text buffer fallback
 │   └── serial.rs         # UART 16550 serial driver
 ├── allocator/            # Heap allocator (fixed-size block)
 ├── task/                 # Async executor + keyboard stream

@@ -26,6 +26,10 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     use rustos::memory::{self, BootInfoFrameAllocator};
     use x86_64::VirtAddr;
 
+    // Real firmware may leave IF set. Keep hardware IRQs off until RustOS has
+    // loaded its own IDT and initialized every interrupt handler dependency.
+    x86_64::instructions::interrupts::disable();
+
     // Force early initialization of serial port (before enabling interrupts)
     // The serial port uses lazy_static, which initializes on first access.
     // If initialization happens AFTER interrupts are enabled, and an interrupt
