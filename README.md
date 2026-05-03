@@ -22,7 +22,7 @@ XHCI USB driver, FAT32 filesystem, ELF process loader, and a userspace shell env
 - **USB Mass Storage (BOT/SCSI)** — reads and writes sectors on USB flash drives
 - **FAT32 driver** — short names, long file names (LFN), cluster-chain traversal, file create/overwrite
 - **Hot-plug USB** — `usbscan` command detects newly connected drives and mounts them
-- **TCP/IP + WiFi integration** — `third_party/tcp-ip` submodule ABI hooks, AX210 discovery, and network syscalls
+- **TCP/IP + WiFi integration** — `tcp-ip` submodule ABI hooks, AX210 discovery, and network syscalls
 - **ELF process loader** — maps PT_LOAD segments and jumps to userspace entry points
 - **`int 0x80` syscall interface** — `SYS_READ`, `SYS_WRITE`, `SYS_EXIT`, `SYS_OPEN`, `SYS_CLOSE`
 - **[rustos-rt](../../tree/rustos-rt)** — companion Rust userspace runtime crate (separate branch)
@@ -46,7 +46,7 @@ Legacy kernel commands are exposed as `/bin/*` executables for `rsh` execution:
 
 The `net` command reports the pinned tcp-ip submodule and detected WiFi device.
 The tcp-ip userspace tools (`wifi`, `ping`, `ifconfig`, `netstat`) are provided
-by `third_party/tcp-ip` and can be built as RustOS ELFs and copied to `/bin`.
+by the `tcp-ip` submodule and can be built as RustOS ELFs and copied to `/bin`.
 
 ## USB flash drive workflow
 
@@ -142,9 +142,8 @@ src/
 crates/
 └── rustos-rt/            # Userspace Rust runtime (also on branch rustos-rt)
 
-third_party/
-├── rsh/                  # Shell submodule source (userspace program)
-└── tcp-ip/               # TCP/IP + WiFi stack submodule source
+rsh/                      # Shell submodule (RustOS-Dev/rsh)
+tcp-ip/                   # TCP/IP + WiFi stack submodule (RustOS-Dev/tcp-ip)
 ```
 
 ## Building and running

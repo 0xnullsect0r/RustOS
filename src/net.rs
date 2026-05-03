@@ -1,6 +1,6 @@
-//! Kernel-side integration points for the external `tcp-ip` stack submodule.
+//! Kernel-side integration points for the `tcp-ip` stack submodule.
 //!
-//! The stack source is pinned as a git submodule under `third_party/tcp-ip`.
+//! The stack source lives in the `tcp-ip/` submodule at the repository root.
 //! This module owns the RustOS-facing ABI: boot-time network device discovery,
 //! status reporting, and the syscall numbers consumed by the tcp-ip userspace
 //! management tools.
@@ -87,7 +87,7 @@ pub fn init() {
 pub fn print_status() {
     let state = *NETWORK_STATE.lock();
     crate::println!(
-        "tcp-ip submodule: third_party/tcp-ip @ {}",
+        "tcp-ip submodule: tcp-ip @ {}",
         TCP_IP_SUBMODULE_COMMIT
     );
     if !state.initialized {

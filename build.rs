@@ -3,11 +3,11 @@ use std::process::Command;
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-changed=third_party/tcp-ip/src");
-    println!("cargo:rerun-if-changed=third_party/rsh/src");
+    println!("cargo:rerun-if-changed=tcp-ip/src");
+    println!("cargo:rerun-if-changed=rsh/src");
     // Re-run whenever either submodule HEAD advances.
-    println!("cargo:rerun-if-changed=.git/modules/third_party/tcp-ip/HEAD");
-    println!("cargo:rerun-if-changed=.git/modules/third_party/rsh/HEAD");
+    println!("cargo:rerun-if-changed=.git/modules/tcp-ip/HEAD");
+    println!("cargo:rerun-if-changed=.git/modules/rsh/HEAD");
 
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     let out_dir = std::env::var("OUT_DIR").unwrap();
@@ -15,7 +15,7 @@ fn main() {
     // Pull both submodules to their latest upstream commits before building.
     update_submodules(&manifest_dir);
 
-    let tcp_ip_dir = Path::new(&manifest_dir).join("third_party/tcp-ip");
+    let tcp_ip_dir = Path::new(&manifest_dir).join("tcp-ip");
 
     if !tcp_ip_dir.exists() {
         println!(
@@ -102,8 +102,8 @@ fn update_submodules(manifest_dir: &str) {
             "update",
             "--init",
             "--remote",
-            "third_party/tcp-ip",
-            "third_party/rsh",
+            "tcp-ip",
+            "rsh",
         ])
         .current_dir(manifest_dir)
         .status();
