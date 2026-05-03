@@ -189,6 +189,21 @@ impl FrameBufferWriter {
 
     // ── pixel helpers ──────────────────────────────────────────────────────
 
+    /// Write a single pixel at (x, y).
+    fn write_pixel(&mut self, x: usize, y: usize, color: Color) {
+        if x >= self.info.width || y >= self.info.height {
+            return;
+        }
+        let pixel_offset = y * self.info.stride + x;
+        let byte_offset = pixel_offset * self.info.bytes_per_pixel;
+        if byte_offset + self.info.bytes_per_pixel > self.framebuffer.len() {
+            return;
+        }
+        let bytes = self.color_to_bytes(color);
+        let bpp = self.info.bytes_per_pixel.min(4);
+        self.framebuffer[byte_offset..byte_offset + bpp].copy_from_slice(&bytes[..bpp]);
+    }
+
     /// Encode `color` into the framebuffer's byte order.
     fn color_to_bytes(&self, color: Color) -> [u8; 4] {
         match self.info.pixel_format {
