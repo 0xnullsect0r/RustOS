@@ -110,7 +110,11 @@ pub async fn print_keypresses() {
 
 pub fn read_input_byte() -> Option<u8> {
     let queue = SCANCODE_QUEUE.try_get().ok()?;
-    let scancode = queue.pop()?;
+    let scancode = queue.pop().or_else(poll_ps2_scancode)?;
+    decode_scancode(scancode)
+}
+
+fn decode_scancode(scancode: u8) -> Option<u8> {
     let mut keyboard = KEYBOARD_DECODER.lock();
     let key_event = keyboard.add_byte(scancode).ok()??;
     let key = keyboard.process_keyevent(key_event)?;
@@ -118,5 +122,29 @@ pub fn read_input_byte() -> Option<u8> {
         DecodedKey::Unicode(c) if c.is_ascii() => Some(c as u8),
         DecodedKey::RawKey(KeyCode::Backspace) => Some(0x08),
         _ => None,
+    }
+}
+
+fn poll_ps2_scancode() -> Option<u8> {
+    use x86_64::instructions::port::Port;
+
+    unsafe {
+        let mut status_port = Port::<u8>::new(0x64);
+        let status = status_port.read();
+        if status & 0x01 == 0 {
+            return None;
+        }
+
+        let mut data_port = Port::<u8>::new(0x60);
+        let scancode = data_port.read();
+
+        // Bit 5 indicates auxiliary PS/2 mouse data. The shell only decodes
+        // keyboard set-1 scancodes, so ignore mouse bytes if firmware enables
+        // the auxiliary device.
+        if status & 0x20 != 0 {
+            return None;
+        }
+
+        Some(scancode)
     }
 }

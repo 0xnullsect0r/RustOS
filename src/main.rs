@@ -150,8 +150,9 @@ fn launch_kernel_shell() -> ! {
         if let Some(byte) = rustos::task::keyboard::read_input_byte() {
             shell.handle_char(byte as char);
         } else {
-            // No input available, yield CPU
-            x86_64::instructions::hlt();
+            // Keep polling too: some real laptops expose PS/2-compatible
+            // keyboard data but do not route IRQ1 through the legacy PIC.
+            core::hint::spin_loop();
         }
     }
 }
