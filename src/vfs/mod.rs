@@ -148,17 +148,18 @@ impl Filesystem for Fat32Mount {
     fn write_file(&mut self, path: &str, data: &[u8]) -> VfsResult<()> {
         self.0.write_file(path, data).ok_or(VfsError::IoError)
     }
-    fn mkdir(&mut self, _: &str) -> VfsResult<()> {
-        Err(VfsError::ReadOnly)
+    fn mkdir(&mut self, path: &str) -> VfsResult<()> {
+        self.0.mkdir(path).ok_or(VfsError::IoError)
     }
-    fn remove(&mut self, _: &str) -> VfsResult<()> {
-        Err(VfsError::ReadOnly)
+    fn remove(&mut self, path: &str) -> VfsResult<()> {
+        self.0.remove(path).ok_or(VfsError::IoError)
     }
-    fn rename(&mut self, _: &str, _: &str) -> VfsResult<()> {
-        Err(VfsError::ReadOnly)
+    fn rename(&mut self, src: &str, dst: &str) -> VfsResult<()> {
+        self.0.rename(src, dst).ok_or(VfsError::IoError)
     }
-    fn copy(&mut self, _: &str, _: &str) -> VfsResult<()> {
-        Err(VfsError::ReadOnly)
+    fn copy(&mut self, src: &str, dst: &str) -> VfsResult<()> {
+        let data = self.0.read_file(src).ok_or(VfsError::IoError)?;
+        self.0.write_file(dst, &data).ok_or(VfsError::IoError)
     }
     fn is_dir(&mut self, path: &str) -> bool {
         self.0.list(path).is_some()

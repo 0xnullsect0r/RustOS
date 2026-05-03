@@ -585,6 +585,143 @@ impl Fat32Fs {
             .copy_from_slice(&dir_entry_bytes(entry));
         self.dev.write_sectors(sector, &sector_data)
     }
+
+    /// Mark a directory entry as deleted (first byte = 0xE5) and free its cluster chain.
+    fn delete_dir_entry(&mut self, dir_cluster: u32, entry_index: usize) -> Option<()> {
+        let byte_offset = entry_index * 32;
+        let cluster_index = byte_offset / self.bytes_per_cluster();
+        let offset_in_cluster = byte_offset % self.bytes_per_cluster();
+        let chain = self.cluster_chain(dir_cluster);
+        let cluster = *chain.get(cluster_index)?;
+        let sector = self.cluster_to_sector(cluster)
+            + (offset_in_cluster / self.bytes_per_sector as usize) as u64;
+        let offset_in_sector = offset_in_cluster % self.bytes_per_sector as usize;
+        let mut sector_data = self.dev.read_sectors(sector, 1)?;
+        sector_data[offset_in_sector] = 0xE5; // mark deleted
+        self.dev.write_sectors(sector, &sector_data)
+    }
+
+    /// Create a directory at `path`.
+    pub fn mkdir(&mut self, path: &str) -> Option<()> {
+        let (parent_path, dir_name) = split_parent(path)?;
+        let parent = if parent_path == "/" {
+            FatDirEntry {
+                name: String::from("/"),
+                is_dir: true,
+                size: 0,
+                cluster: self.root_cluster,
+            }
+        } else {
+            self.lookup(&parent_path)?
+        };
+        if !parent.is_dir {
+            return None;
+        }
+        let short_name = make_short_name(&dir_name)?;
+        // Don't create if already exists
+        if self
+            .find_dir_entry(parent.cluster, &short_name, &dir_name)
+            .is_some()
+        {
+            return Some(());
+        }
+        // Allocate one cluster for the new directory
+        let clusters = self.allocate_chain(1)?;
+        let new_cluster = clusters[0];
+        // Write . and .. entries into the new cluster
+        let bpc = self.bytes_per_cluster();
+        let mut dir_data = alloc::vec![0u8; bpc];
+        // "." entry
+        let dot = make_dir_entry_raw(*b".          ", new_cluster, 0, ATTR_DIRECTORY);
+        dir_data[0..32].copy_from_slice(&dir_entry_bytes(&dot));
+        // ".." entry
+        let dotdot_cluster = parent.cluster;
+        let dotdot = make_dir_entry_raw(*b"..         ", dotdot_cluster, 0, ATTR_DIRECTORY);
+        dir_data[32..64].copy_from_slice(&dir_entry_bytes(&dotdot));
+        self.write_cluster(new_cluster, &dir_data)?;
+        // Add entry to parent directory
+        let dir_index = self.find_free_dir_entry(parent.cluster)?;
+        let entry = make_dir_entry_raw(short_name, new_cluster, 0, ATTR_DIRECTORY);
+        self.write_dir_entry(parent.cluster, dir_index, &entry)
+    }
+
+    /// Remove a file or empty directory at `path`.
+    pub fn remove(&mut self, path: &str) -> Option<()> {
+        let (parent_path, name) = split_parent(path)?;
+        let parent = if parent_path == "/" {
+            FatDirEntry {
+                name: String::from("/"),
+                is_dir: true,
+                size: 0,
+                cluster: self.root_cluster,
+            }
+        } else {
+            self.lookup(&parent_path)?
+        };
+        let short_name = make_short_name(&name)?;
+        let (idx, entry) = self.find_dir_entry(parent.cluster, &short_name, &name)?;
+        if entry.is_dir {
+            // Only remove if empty
+            let contents = self.list_dir(entry.cluster);
+            if !contents.is_empty() {
+                return None; // directory not empty
+            }
+        }
+        if entry.cluster >= 2 {
+            self.free_chain(entry.cluster)?;
+        }
+        self.delete_dir_entry(parent.cluster, idx)
+    }
+
+    /// Rename / move `src` to `dst`.
+    pub fn rename(&mut self, src: &str, dst: &str) -> Option<()> {
+        // Read source entry data
+        let data = if !self.lookup(src)?.is_dir {
+            self.read_file(src)?
+        } else {
+            // For directories: create new dir, move children (not implemented deeply —
+            // simple case: just move the dir entry cluster reference).
+            alloc::vec![]
+        };
+        let src_entry = self.lookup(src)?;
+        if src_entry.is_dir {
+            // Re-home the directory cluster: create entry at dst pointing to same cluster,
+            // then remove old entry.
+            let (dst_parent_path, dst_name) = split_parent(dst)?;
+            let dst_parent = if dst_parent_path == "/" {
+                FatDirEntry {
+                    name: String::from("/"),
+                    is_dir: true,
+                    size: 0,
+                    cluster: self.root_cluster,
+                }
+            } else {
+                self.lookup(&dst_parent_path)?
+            };
+            let short_name = make_short_name(&dst_name)?;
+            let dir_index = self.find_free_dir_entry(dst_parent.cluster)?;
+            let entry = make_dir_entry_raw(short_name, src_entry.cluster, 0, ATTR_DIRECTORY);
+            self.write_dir_entry(dst_parent.cluster, dir_index, &entry)?;
+            // Remove old entry without freeing the cluster chain
+            let (src_parent_path, src_name) = split_parent(src)?;
+            let src_parent = if src_parent_path == "/" {
+                FatDirEntry {
+                    name: String::from("/"),
+                    is_dir: true,
+                    size: 0,
+                    cluster: self.root_cluster,
+                }
+            } else {
+                self.lookup(&src_parent_path)?
+            };
+            let src_short = make_short_name(&src_name)?;
+            let (src_idx, _) = self.find_dir_entry(src_parent.cluster, &src_short, &src_name)?;
+            self.delete_dir_entry(src_parent.cluster, src_idx)
+        } else {
+            self.write_file(dst, &data)?;
+            self.remove(src)
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -662,9 +799,13 @@ fn short_name_byte(byte: u8) -> Option<u8> {
 }
 
 fn make_dir_entry(name: [u8; 11], cluster: u32, size: u32) -> DirEntry32 {
+    make_dir_entry_raw(name, cluster, size, ATTR_ARCHIVE)
+}
+
+fn make_dir_entry_raw(name: [u8; 11], cluster: u32, size: u32, attributes: u8) -> DirEntry32 {
     DirEntry32 {
         name,
-        attributes: ATTR_ARCHIVE,
+        attributes,
         _nt_res: 0,
         _crt_time_tenth: 0,
         _crt_time: 0,
