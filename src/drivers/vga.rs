@@ -146,6 +146,8 @@ impl Writer {
 
 // Keep this conversion private so the VGA color enum remains the shell-facing
 // API while framebuffer-specific colors stay encapsulated in the active backend.
+// The framebuffer palette is intentionally smaller than VGA's 16-color text
+// palette, so light/dark variants collapse to the nearest base color.
 fn to_framebuffer_color(color: Color) -> crate::drivers::framebuffer::Color {
     use crate::drivers::framebuffer::Color as FbColor;
 

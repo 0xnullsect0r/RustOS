@@ -37,7 +37,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     // the interrupt handler might try to acquire the partially-initialized Mutex,
     // causing a deadlock or undefined behavior. By forcing initialization here
     // while interrupts are still disabled, we ensure thread-safe access later.
-    rustos::serial_println!("[kernel] Serial initialized");
+    rustos::serial_println!("[kernel] Initializing serial port early (before interrupts)");
 
     // Take over the bootloader-provided framebuffer before any code can print
     // through the VGA fallback. On UEFI systems VGA memory is often absent, so
