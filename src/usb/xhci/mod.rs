@@ -918,7 +918,7 @@ impl Xhci {
     }
 
     pub fn write_sectors_dev(&mut self, dev_idx: usize, lba: u64, data: &[u8]) -> Option<()> {
-        if data.len() % 512 != 0 {
+        if !data.len().is_multiple_of(512) {
             return None;
         }
         let count = data.len() / 512;

@@ -19,8 +19,8 @@ XHCI USB driver, FAT32 filesystem, ELF process loader, and a userspace shell env
 - **VFS with mount table** — FAT32 storage partition as root `/` + additional FAT32 mounts
 - **PCI enumeration** — finds XHCI host controllers on the PCI bus
 - **XHCI USB 3.x driver** — full controller init, port enumeration, control + bulk transfers
-- **USB Mass Storage (BOT/SCSI)** — reads sectors from USB flash drives
-- **FAT32 read-only driver** — short names, long file names (LFN), cluster-chain traversal
+- **USB Mass Storage (BOT/SCSI)** — reads and writes sectors on USB flash drives
+- **FAT32 driver** — short names, long file names (LFN), cluster-chain traversal, file create/overwrite
 - **Hot-plug USB** — `usbscan` command detects newly connected drives and mounts them
 - **ELF process loader** — maps PT_LOAD segments and jumps to userspace entry points
 - **`int 0x80` syscall interface** — `SYS_READ`, `SYS_WRITE`, `SYS_EXIT`, `SYS_OPEN`, `SYS_CLOSE`
@@ -28,25 +28,20 @@ XHCI USB driver, FAT32 filesystem, ELF process loader, and a userspace shell env
 
 ## Shell
 
-RustOS boots directly into the built-in kernel shell. This keeps the default
-real-hardware boot path independent from the experimental userspace process
-loader and avoids restarting a failing init process in a tight loop.
+RustOS boots directly into the `/bin/rsh` console environment. The prompt is:
 
-The experimental [`rsh`](https://github.com/RustOS-Dev/rsh) userspace shell is
-kept as a git submodule at:
-
-```text
-third_party/rsh
+```console
+rsh:/>
 ```
 
-It is not built or launched by default during kernel startup. Use the built-in
-`exec` command to test userspace ELF binaries explicitly.
+The `/bin` directory is a virtual command directory, so `ls /bin` shows the
+commands available to `rsh`.
 
 Legacy kernel commands are exposed as `/bin/*` executables for `rsh` execution:
 `/bin/help`, `/bin/echo`, `/bin/clear`, `/bin/uname`, `/bin/color`, `/bin/pwd`,
 `/bin/ls`, `/bin/cd`, `/bin/mkdir`, `/bin/rm`, `/bin/cat`, `/bin/write`,
 `/bin/cp`, `/bin/mv`, `/bin/meminfo`, `/bin/mount`, `/bin/exec`, `/bin/usbscan`,
-`/bin/reboot`.
+`/bin/reboot`, `/bin/rsh`.
 
 ## USB flash drive workflow
 

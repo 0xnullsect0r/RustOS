@@ -89,7 +89,7 @@ impl BlockDevice for PartitionBlockDevice {
     }
 
     fn write_sectors(&mut self, lba: u64, data: &[u8]) -> Option<()> {
-        if data.len() % 512 != 0 {
+        if !data.len().is_multiple_of(512) {
             return None;
         }
         let count = (data.len() / 512) as u64;
@@ -230,7 +230,10 @@ pub fn mount_boot_storage_root() -> bool {
     let Some(vfs) = vfs.as_mut() else {
         return false;
     };
-    vfs.set_root(Box::new(crate::vfs::Fat32Mount(fat32)));
+    vfs.set_root(
+        Box::new(crate::vfs::Fat32Mount(fat32)),
+        "fat32 RUSTOS_ROOT persistent",
+    );
     crate::println!("[usb] mounted device0 partition2 FAT32 as root filesystem '/'");
     true
 }

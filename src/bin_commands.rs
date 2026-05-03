@@ -2,8 +2,12 @@ use crate::vfs::{NodeType, VFS};
 
 const VIRTUAL_BIN_COMMANDS: &[&str] = &[
     "help", "echo", "clear", "uname", "color", "pwd", "ls", "cd", "mkdir", "rm", "cat", "write",
-    "cp", "mv", "meminfo", "mount", "exec", "usbscan", "reboot",
+    "cp", "mv", "meminfo", "mount", "exec", "usbscan", "reboot", "rsh",
 ];
+
+pub fn virtual_bin_commands() -> &'static [&'static str] {
+    VIRTUAL_BIN_COMMANDS
+}
 
 pub fn is_virtual_bin_path(path: &str) -> Option<&str> {
     let cmd = path.strip_prefix("/bin/")?;
@@ -30,6 +34,10 @@ pub fn run_virtual_bin_command(path: &str) -> Option<i64> {
         "mount" => cmd_mount(),
         "usbscan" => cmd_usbscan(),
         "reboot" => cmd_reboot(),
+        "rsh" => {
+            crate::println!("rsh is already running on the console");
+            0
+        }
         "color" => {
             crate::println!("Usage: /bin/color <fg> <bg>");
             2
@@ -131,15 +139,16 @@ fn cmd_meminfo() -> i64 {
 }
 
 fn cmd_mount() -> i64 {
-    let mounts = VFS.lock().as_ref().map(|vfs| vfs.list_mounts());
-    match mounts {
-        Some(m) if !m.is_empty() => {
-            crate::println!("/  (root fs)");
+    let vfs = VFS.lock();
+    match vfs.as_ref() {
+        Some(vfs) => {
+            crate::println!("/  ({})", vfs.root_name());
+            let m = vfs.list_mounts();
             for mp in &m {
                 crate::println!("{}  (fat32)", mp);
             }
         }
-        _ => crate::println!("/  (root fs)  [no additional mounts]"),
+        None => crate::println!("mount: VFS not initialised"),
     }
     0
 }

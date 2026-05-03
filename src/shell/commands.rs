@@ -270,15 +270,16 @@ fn cmd_meminfo() {
 }
 
 fn cmd_mount() {
-    let mounts = VFS.lock().as_ref().map(|vfs| vfs.list_mounts());
-    match mounts {
-        Some(m) if !m.is_empty() => {
-            crate::println!("/  (ramfs)");
+    let vfs = VFS.lock();
+    match vfs.as_ref() {
+        Some(vfs) => {
+            crate::println!("/  ({})", vfs.root_name());
+            let m = vfs.list_mounts();
             for mp in &m {
                 crate::println!("{}  (fat32)", mp);
             }
         }
-        _ => crate::println!("/  (ramfs)  [no additional mounts]"),
+        None => crate::println!("mount: VFS not initialised"),
     }
 }
 
@@ -288,6 +289,10 @@ fn cmd_exec(shell: &mut Shell, args: &[&str]) {
         return;
     };
     let path = shell.resolve_path(input);
+    if let Some(code) = crate::bin_commands::run_virtual_bin_command(&path) {
+        crate::println!("exec: process exited with code {}", code);
+        return;
+    }
     let data = {
         let result = VFS
             .lock()

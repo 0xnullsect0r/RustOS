@@ -3,12 +3,13 @@
 pub mod commands;
 
 use crate::drivers::vga::Color;
-use alloc::string::String;
+use alloc::string::{String, ToString};
 
 /// The interactive shell state: current directory, input line buffer, and current colors.
 pub struct Shell {
     pub cwd: String,
     input_buf: String,
+    prompt_name: String,
     pub fg_color: Color,
     pub bg_color: Color,
 }
@@ -18,9 +19,16 @@ impl Shell {
         Shell {
             cwd: String::from("/"),
             input_buf: String::new(),
+            prompt_name: String::from("rustos"),
             fg_color: Color::Yellow,
             bg_color: Color::Black,
         }
+    }
+
+    pub fn rsh() -> Self {
+        let mut shell = Self::new();
+        shell.prompt_name = "rsh".to_string();
+        shell
     }
 
     /// Process a single decoded unicode character from the keyboard.
@@ -48,7 +56,7 @@ impl Shell {
 
     /// Print the shell prompt, including the current working directory.
     pub fn print_prompt(&self) {
-        crate::print!("rustos:{}> ", self.cwd);
+        crate::print!("{}:{}> ", self.prompt_name, self.cwd);
     }
 
     /// Resolve a path relative to the shell's current working directory.
