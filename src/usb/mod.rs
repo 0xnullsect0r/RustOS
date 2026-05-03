@@ -11,6 +11,7 @@ use spin::Mutex;
 /// A block device that can read 512-byte sectors.
 pub trait BlockDevice: Send {
     fn read_sectors(&mut self, lba: u64, count: u16) -> Option<alloc::vec::Vec<u8>>;
+    fn write_sectors(&mut self, lba: u64, data: &[u8]) -> Option<()>;
     fn sector_count(&self) -> u64;
 }
 
@@ -41,6 +42,13 @@ impl BlockDevice for XhciBlockDevice {
             .lock()
             .as_mut()?
             .read_sectors_dev(self.dev_idx, lba, count)
+    }
+
+    fn write_sectors(&mut self, lba: u64, data: &[u8]) -> Option<()> {
+        USB_XHCI
+            .lock()
+            .as_mut()?
+            .write_sectors_dev(self.dev_idx, lba, data)
     }
 
     fn sector_count(&self) -> u64 {
@@ -78,6 +86,19 @@ impl BlockDevice for PartitionBlockDevice {
         }
         self.inner
             .read_sectors(self.start_lba.checked_add(lba)?, count)
+    }
+
+    fn write_sectors(&mut self, lba: u64, data: &[u8]) -> Option<()> {
+        if data.len() % 512 != 0 {
+            return None;
+        }
+        let count = (data.len() / 512) as u64;
+        let end = lba.checked_add(count)?;
+        if end > self.sector_count {
+            return None;
+        }
+        self.inner
+            .write_sectors(self.start_lba.checked_add(lba)?, data)
     }
 
     fn sector_count(&self) -> u64 {

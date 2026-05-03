@@ -812,6 +812,35 @@ impl Xhci {
         result
     }
 
+    fn scsi_write_command(&mut self, dev_idx: usize, cdb: &[u8], data: &[u8]) -> Option<()> {
+        static mut TAG: u32 = 0x8000_0000;
+        let tag = unsafe { TAG };
+        unsafe {
+            TAG = TAG.wrapping_add(1);
+        }
+
+        let mut cbw = [0u8; 31];
+        cbw[0..4].copy_from_slice(&0x43425355u32.to_le_bytes());
+        cbw[4..8].copy_from_slice(&tag.to_le_bytes());
+        cbw[8..12].copy_from_slice(&(data.len() as u32).to_le_bytes());
+        cbw[12] = 0x00; // OUT
+        cbw[14] = cdb.len() as u8;
+        cbw[15..15 + cdb.len()].copy_from_slice(cdb);
+
+        if !self.bulk_out(dev_idx, &cbw) {
+            return None;
+        }
+        if !data.is_empty() && !self.bulk_out(dev_idx, data) {
+            return None;
+        }
+
+        let csw = self.bulk_in(dev_idx, 13)?;
+        if csw.len() < 13 || &csw[0..4] != b"USBS" || csw[12] != 0 {
+            return None;
+        }
+        Some(())
+    }
+
     fn read_capacity(&mut self, dev: &mut UsbDevice) -> Option<(u64, u32)> {
         // We need to pass dev_idx; temporarily push, get index, do the call
         // Instead, inline the SCSI BOT directly
@@ -886,6 +915,30 @@ impl Xhci {
             0,           // control
         ];
         self.scsi_command(dev_idx, &cdb, Some(len))
+    }
+
+    pub fn write_sectors_dev(&mut self, dev_idx: usize, lba: u64, data: &[u8]) -> Option<()> {
+        if data.len() % 512 != 0 {
+            return None;
+        }
+        let count = data.len() / 512;
+        if count == 0 || count > u16::MAX as usize {
+            return None;
+        }
+        let count = count as u16;
+        let cdb = [
+            0x2au8, // WRITE(10) opcode
+            0,      // LUN=0
+            (lba >> 24) as u8,
+            (lba >> 16) as u8,
+            (lba >> 8) as u8,
+            lba as u8,
+            0,
+            (count >> 8) as u8,
+            count as u8,
+            0,
+        ];
+        self.scsi_write_command(dev_idx, &cdb, data)
     }
 
     /// Re-scan all ports and enumerate any newly connected devices.

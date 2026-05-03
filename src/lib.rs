@@ -25,6 +25,7 @@ pub mod vfs;
 pub use arch::x86_64::gdt;
 pub use arch::x86_64::interrupts;
 pub use arch::x86_64::memory;
+pub use arch::x86_64::reboot;
 
 /// Initialize CPU descriptor tables and the interrupt controller while keeping
 /// interrupts disabled. Call [`enable_interrupts`] only after all interrupt

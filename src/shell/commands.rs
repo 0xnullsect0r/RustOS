@@ -318,12 +318,5 @@ fn cmd_usbscan() {
 }
 
 fn cmd_reboot() {
-    crate::println!("Rebooting...");
-    unsafe {
-        x86_64::instructions::interrupts::disable();
-        let mut port: x86_64::instructions::port::Port<u8> =
-            x86_64::instructions::port::Port::new(0x64);
-        port.write(0xFE_u8);
-    }
-    crate::hlt_loop();
+    crate::reboot::reboot();
 }
