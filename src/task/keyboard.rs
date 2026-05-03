@@ -144,6 +144,8 @@ fn decode_event(scancode: u8) -> Option<InputEvent> {
     match key {
         // Ctrl+C (ETX, 0x03) — pass through so the shell can clear the line.
         DecodedKey::Unicode('\x03') => Some(InputEvent::Char(0x03)),
+        // Backspace / DEL — must be matched before the control-character filter below.
+        DecodedKey::Unicode('\x08') | DecodedKey::Unicode('\x7f') => Some(InputEvent::Char(0x08)),
         DecodedKey::Unicode(c) if c.is_ascii() && !c.is_ascii_control() => {
             Some(InputEvent::Char(c as u8))
         }
