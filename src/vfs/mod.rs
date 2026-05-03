@@ -271,7 +271,17 @@ impl Vfs {
     pub fn list_dir(&mut self, path: &str) -> VfsResult<Vec<DirEntry>> {
         let norm = normalize(path);
         if norm == "/bin" {
-            return Ok(virtual_bin_entries());
+            let mut entries = virtual_bin_entries();
+            // Also include any real files stored in the root FS under /bin/
+            // (e.g. ELF binaries installed by net_bins::install).
+            if let Ok(real) = self.root.list_dir("/bin") {
+                for e in real {
+                    if !entries.iter().any(|v| v.name == e.name) {
+                        entries.push(e);
+                    }
+                }
+            }
+            return Ok(entries);
         }
         let (fs, rel) = self.route(path);
         let mut entries = fs.list_dir(&rel)?;

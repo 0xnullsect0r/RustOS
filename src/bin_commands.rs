@@ -2,8 +2,8 @@ use crate::vfs::{NodeType, VFS};
 
 const VIRTUAL_BIN_COMMANDS: &[&str] = &[
     "help", "echo", "clear", "uname", "color", "pwd", "ls", "cd", "mkdir", "rm", "cat", "write",
-    "cp", "mv", "meminfo", "mount", "exec", "usbscan", "reboot", "rsh", "net", "lspci", "lsusb",
-    "lsblk", "grep", "ps",
+    "cp", "mv", "meminfo", "mount", "exec", "usbscan", "reboot", "shutdown", "rsh", "net", "lspci",
+    "lsusb", "lsblk", "grep", "ps",
 ];
 
 pub fn virtual_bin_commands() -> &'static [&'static str] {
@@ -36,6 +36,7 @@ pub fn run_virtual_bin_command(path: &str) -> Option<i64> {
         "net" => cmd_net(),
         "usbscan" => cmd_usbscan(),
         "reboot" => cmd_reboot(),
+        "shutdown" => cmd_shutdown(),
         "rsh" => {
             crate::println!("rsh is already running on the console");
             0
@@ -191,4 +192,9 @@ fn cmd_usbscan() -> i64 {
 /// Triggers an immediate system reboot via keyboard controller reset and never returns.
 fn cmd_reboot() -> ! {
     crate::reboot::reboot();
+}
+
+/// Attempts an ACPI S5 power-off and never returns.
+fn cmd_shutdown() -> ! {
+    crate::reboot::shutdown();
 }

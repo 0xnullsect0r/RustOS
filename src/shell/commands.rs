@@ -27,6 +27,7 @@ pub fn dispatch(shell: &mut Shell, cmd: &str, args: &[&str]) {
         "exec" => cmd_exec(shell, args),
         "usbscan" => cmd_usbscan(),
         "reboot" => cmd_reboot(),
+        "shutdown" => cmd_shutdown(),
         "lspci" => cmd_lspci(),
         "lsusb" => cmd_lsusb(),
         "lsblk" => cmd_lsblk(),
@@ -58,6 +59,7 @@ pub fn print_help() {
     crate::println!("  exec <path>       - Execute an ELF binary from the VFS");
     crate::println!("  usbscan           - Scan for newly plugged-in USB drives and mount them");
     crate::println!("  reboot            - Reboot the system");
+    crate::println!("  shutdown          - Power off the system");
     crate::println!("  lspci             - List PCI devices");
     crate::println!("  lsusb             - List USB devices");
     crate::println!("  lsblk             - List block devices");
@@ -345,6 +347,10 @@ fn cmd_usbscan() {
 
 fn cmd_reboot() {
     crate::reboot::reboot();
+}
+
+fn cmd_shutdown() {
+    crate::reboot::shutdown();
 }
 
 // ---------------------------------------------------------------------------

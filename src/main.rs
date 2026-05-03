@@ -80,6 +80,10 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     // Initialise VFS
     rustos::vfs::init();
 
+    // Install embedded tcp-ip management ELF binaries (/bin/wifi etc.).
+    // This must happen after VFS init and heap init.
+    rustos::net_bins::install();
+
     // Probe PCI for XHCI and mount USB FAT32
     rustos::net::init();
     init_usb_storage();
