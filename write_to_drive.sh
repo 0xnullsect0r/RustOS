@@ -132,8 +132,6 @@ echo
 echo "Target drive: $DRIVE"
 echo
 echo "WARNING: ALL DATA ON '$DRIVE' WILL BE PERMANENTLY DESTROYED."
-echo "Press Ctrl+C within 5 seconds to abort ..."
-sleep 5
 echo
 
 echo "Writing image to $DRIVE ..."
