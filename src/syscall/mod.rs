@@ -6,7 +6,7 @@
 //!   Return value in rax (negative = error).
 
 use alloc::{string::String, vec::Vec};
-use x86_64::structures::idt::InterruptStackFrame;
+use core::arch::naked_asm;
 
 /// Syscall numbers — must match rustos-rt/src/lib.rs.
 /// Uses Linux-compatible numbering so rustos-rt programs feel familiar.
@@ -27,31 +27,71 @@ pub const FD_STDERR: u64 = 2;
 /// Reset to None before exec(), set by the handler.
 pub static PROCESS_EXIT_CODE: spin::Mutex<Option<i64>> = spin::Mutex::new(None);
 
-/// The raw interrupt handler registered for int 0x80.
-/// We use the `x86-interrupt` calling convention which saves/restores all
-/// caller-saved registers automatically.
-pub extern "x86-interrupt" fn syscall_handler(_stack_frame: InterruptStackFrame) {
-    // Read registers saved by the CPU / interrupt prologue.
-    // We retrieve rax/rdi/rsi/rdx via inline asm before the compiler clobbers them.
-    let (nr, a1, a2, a3): (u64, u64, u64, u64);
-    unsafe {
-        core::arch::asm!(
-            "mov {nr}, rax",
-            "mov {a1}, rdi",
-            "mov {a2}, rsi",
-            "mov {a3}, rdx",
-            nr = out(reg) nr,
-            a1 = out(reg) a1,
-            a2 = out(reg) a2,
-            a3 = out(reg) a3,
-            options(nostack, nomem),
-        );
-    }
-    dispatch(nr, a1, a2, a3);
+/// Raw int 0x80 syscall gate.
+///
+/// Implemented as a `#[naked]` function to prevent the compiler-generated
+/// x86-interrupt prologue/epilogue from silently restoring rax (with the
+/// original syscall number) before `iretq`, which would discard the return
+/// value written by `dispatch()`.
+///
+/// The function:
+///   1. Saves caller-saved registers (rax is the syscall nr — not saved in a
+///      slot because we overwrite rax with the result on exit).
+///   2. Translates the syscall register arguments to the SysV AMD64 ABI and
+///      calls `dispatch(nr, a1, a2, a3)`.
+///   3. Stashes dispatch's return value in r11 (caller-saved; acceptable to
+///      clobber across an int 0x80 call).
+///   4. Restores all other saved registers, places the return value in rax,
+///      and executes `iretq`.
+///
+/// # Safety
+///
+/// Must only be called by the CPU as an IDT interrupt handler (registered via
+/// `idt[0x80].set_handler_addr`).  Calling it directly from Rust code is
+/// undefined behaviour.
+#[unsafe(naked)]
+pub unsafe extern "C" fn syscall_handler() {
+    naked_asm!(
+        // Save caller-saved GPRs.  We do NOT push rax here; we will write
+        // the return value into rax just before iretq instead.
+        "push rcx",
+        "push rdx",
+        "push rsi",
+        "push rdi",
+        "push r8",
+        "push r9",
+        "push r10",
+        "push r11",
+        // Translate syscall args → SysV AMD64 ABI for dispatch(nr,a1,a2,a3).
+        // On entry: rax=nr, rdi=a1, rsi=a2, rdx=a3.
+        "mov rcx, rdx",  // a3 → 4th arg (rcx)
+        "mov rdx, rsi",  // a2 → 3rd arg (rdx)
+        "mov rsi, rdi",  // a1 → 2nd arg (rsi)
+        "mov rdi, rax",  // nr → 1st arg (rdi)
+        "call {dispatch}",
+        // rax = i64 return value from dispatch().
+        // Stash it in r11 (caller-saved; clobbering it across int 0x80 is
+        // acceptable).  Then skip the saved r11 slot on the stack (keeping
+        // r11 = return value) and restore the remaining registers in reverse
+        // push order.
+        "mov r11, rax",  // stash return value in r11
+        "add rsp, 8",    // skip saved r11 slot on stack
+        "pop r10",
+        "pop r9",
+        "pop r8",
+        "pop rdi",
+        "pop rsi",
+        "pop rdx",
+        "pop rcx",
+        // Place return value in rax for userspace, then return.
+        "mov rax, r11",
+        "iretq",
+        dispatch = sym dispatch,
+    );
 }
 
-fn dispatch(nr: u64, a1: u64, a2: u64, a3: u64) {
-    let ret = match nr {
+extern "C" fn dispatch(nr: u64, a1: u64, a2: u64, a3: u64) -> i64 {
+    match nr {
         SYS_READ => sys_read(a1, a2 as *mut u8, a3 as usize),
         SYS_WRITE => sys_write(a1, a2 as *const u8, a3 as usize),
         SYS_OPEN => sys_open(a1 as *const u8),
@@ -69,13 +109,6 @@ fn dispatch(nr: u64, a1: u64, a2: u64, a3: u64) {
                 -38 // -ENOSYS (function not implemented)
             }
         }
-    };
-    unsafe {
-        core::arch::asm!(
-            "mov rax, {ret}",
-            ret = in(reg) ret as u64,
-            options(nostack, nomem, preserves_flags),
-        );
     }
 }
 
