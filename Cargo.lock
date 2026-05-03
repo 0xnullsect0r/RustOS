@@ -148,6 +148,7 @@ dependencies = [
  "pc-keyboard",
  "pic8259",
  "spin 0.5.2",
+ "tcp-ip",
  "volatile 0.2.7",
  "x86_64",
 ]
@@ -184,6 +185,10 @@ checksum = "5b9eb1a2f4c41445a3a0ff9abc5221c5fcd28e1f13cd7c0397706f9ac938ddb0"
 dependencies = [
  "lock_api",
 ]
+
+[[package]]
+name = "tcp-ip"
+version = "0.1.0"
 
 [[package]]
 name = "volatile"

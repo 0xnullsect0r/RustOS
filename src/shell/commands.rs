@@ -1858,17 +1858,16 @@ pub fn cmd_wifi(args: &[&str]) {
             ) {
                 Some(n) if n > 0 => {
                     let results = tcp_ip::wifi::scan::deserialise(&buf[..n as usize]);
-                    if results.is_empty() {
+                    if results.count() == 0 {
                         crate::println!("wifi: no networks found");
                         return;
                     }
-                    for r in results {
-                        let ssid = core::str::from_utf8(
-                            &r.ssid[..r.ssid_len as usize]
-                        ).unwrap_or("<invalid UTF-8>");
+                    for net in results.networks() {
+                        let ssid = core::str::from_utf8(net.ssid_str())
+                            .unwrap_or("<invalid UTF-8>");
                         crate::println!(
-                            "  SSID: {:32}  Signal: -{} dBm  Channel: {}",
-                            ssid, r.signal_strength, r.channel
+                            "  SSID: {:32}  Signal: {} dBm  Channel: {}  Security: {}",
+                            ssid, net.rssi, net.channel, net.security_label()
                         );
                     }
                 }
