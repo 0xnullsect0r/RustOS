@@ -4,14 +4,22 @@ use std::process::Command;
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=third_party/tcp-ip/src");
+    println!("cargo:rerun-if-changed=third_party/rsh/src");
+    // Re-run whenever either submodule HEAD advances.
+    println!("cargo:rerun-if-changed=.git/modules/third_party/tcp-ip/HEAD");
+    println!("cargo:rerun-if-changed=.git/modules/third_party/rsh/HEAD");
 
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-    let tcp_ip_dir = Path::new(&manifest_dir).join("third_party/tcp-ip");
     let out_dir = std::env::var("OUT_DIR").unwrap();
+
+    // Pull both submodules to their latest upstream commits before building.
+    update_submodules(&manifest_dir);
+
+    let tcp_ip_dir = Path::new(&manifest_dir).join("third_party/tcp-ip");
 
     if !tcp_ip_dir.exists() {
         println!(
-            "cargo:warning=tcp-ip submodule not initialised; run `git submodule update --init`"
+            "cargo:warning=tcp-ip submodule not initialised; run `git submodule update --init --remote`"
         );
         write_empty_bins(&out_dir);
         return;
@@ -79,4 +87,36 @@ fn write_net_bins_rs(out_dir: &str, release_dir: &Path, build_ok: bool) {
         }
     }
     std::fs::write(&path, content).unwrap();
+}
+
+/// Pull both submodules to their latest upstream commits.
+///
+/// Uses `git submodule update --init --remote` so the build always tracks the
+/// HEAD of each submodule's default branch rather than a stale pinned commit.
+/// Failures are downgraded to a cargo warning so an offline build can still
+/// proceed with whatever commits are already checked out.
+fn update_submodules(manifest_dir: &str) {
+    let result = Command::new("git")
+        .args([
+            "submodule",
+            "update",
+            "--init",
+            "--remote",
+            "third_party/tcp-ip",
+            "third_party/rsh",
+        ])
+        .current_dir(manifest_dir)
+        .status();
+
+    match result {
+        Ok(s) if s.success() => {}
+        Ok(s) => println!(
+            "cargo:warning=git submodule update --remote exited with {s}; \
+             using currently checked-out submodule commits"
+        ),
+        Err(e) => println!(
+            "cargo:warning=could not run git to update submodules ({e}); \
+             using currently checked-out submodule commits"
+        ),
+    }
 }
