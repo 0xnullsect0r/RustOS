@@ -494,8 +494,11 @@ impl Fat32Fs {
         }
 
         let bytes_per_cluster = self.bytes_per_cluster();
-        let needed_clusters = usize::max(1, data.len().div_ceil(bytes_per_cluster));
-        let clusters = self.allocate_chain(needed_clusters)?;
+        let clusters = if data.is_empty() {
+            Vec::new()
+        } else {
+            self.allocate_chain(data.len().div_ceil(bytes_per_cluster))?
+        };
 
         for (i, &cluster) in clusters.iter().enumerate() {
             let start = i * bytes_per_cluster;
@@ -515,7 +518,8 @@ impl Fat32Fs {
             None => self.find_free_dir_entry(parent.cluster)?,
         };
 
-        let dir_entry = make_dir_entry(short_name, clusters[0], data.len() as u32);
+        let first_cluster = clusters.first().copied().unwrap_or(0);
+        let dir_entry = make_dir_entry(short_name, first_cluster, data.len() as u32);
         self.write_dir_entry(parent.cluster, dir_index, &dir_entry)
     }
 

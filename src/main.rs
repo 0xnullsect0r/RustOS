@@ -154,7 +154,7 @@ fn launch_rsh() -> ! {
         } else {
             // Before seeing any IRQ1 traffic, do not halt: some real laptops
             // expose PS/2-compatible keyboard data only through polling after
-            // UEFI handoff. Once an IRQ arrives, the branch above can hlt.
+            // UEFI handoff. Once an IRQ arrives, the branch above can halt.
             core::hint::spin_loop();
         }
     }

@@ -11,7 +11,7 @@ const LINE_CONTROL_OFFSET: u16 = 3;
 const MODEM_CONTROL_OFFSET: u16 = 4;
 const LINE_STATUS_OFFSET: u16 = 5;
 const TRANSMIT_EMPTY_BIT: u8 = 0x20;
-// Bound COM1 waits to a tiny best-effort spin window: enough for normal UARTs
+// Bounded COM1 waits use a tiny best-effort spin window: enough for normal UARTs
 // to become ready, but short enough not to stall boot on laptops without COM1.
 const SERIAL_SPIN_LIMIT: usize = 10_000;
 
