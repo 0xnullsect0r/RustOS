@@ -7,6 +7,13 @@
 //! - `FsType` — detected filesystem type for a partition.
 //! - A read-only `BlockDevice` wrapper for both NVMe and AHCI namespaces /
 //!   drives, used by `lsblk` and `mount`.
+//!
+//! **Limitation**: NVMe partition enumeration is not yet supported. The NVMe
+//! probe identifies the controller and namespace capacity via the Admin Identify
+//! command but does not keep a persistent I/O queue alive for subsequent sector
+//! reads. As a result, `lsblk` will show NVMe disks without their partitions.
+//! Tracked as a future improvement; AHCI and USB block devices are fully
+//! enumerated including partition tables and filesystem type detection.
 
 extern crate alloc;
 

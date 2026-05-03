@@ -76,10 +76,10 @@ fn acpi_shutdown() {
     };
 
     // SLP_EN (bit 13) | SLP_TYP (bits 12:10).
-    // SLP_TYP for S5 varies by firmware; try the most common values.
-    // Value 5 (0b101) covers most Intel/AMD real systems.
-    // Value 7 (0b111) is used by many others.
-    // Value 0 (0b000) is QEMU's _S5_ { 0, 0 }.
+    // SLP_TYP for S5 varies by firmware; try the most common values first:
+    //   5 (0b101) — most Intel real-hardware systems
+    //   7 (0b111) — many AMD and other systems
+    //   6, 4, 3, 2, 1, 0 — descending fallback; 0 is QEMU's _S5_ { 0, 0 }
     for slp_typ in [5u16, 7, 6, 4, 3, 2, 1, 0] {
         let val: u16 = 0x2000 | (slp_typ << 10);
         unsafe {

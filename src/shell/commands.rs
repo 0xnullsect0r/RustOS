@@ -748,7 +748,7 @@ fn cmd_cp(shell: &mut Shell, args: &[&str]) {
     }
 
     if paths.len() < 2 {
-        crate::println!("cp: missing destination file operand after '{}'", paths.first().unwrap_or(&""));
+        crate::println!("cp: missing destination file operand");
         crate::println!("Try 'cp --help' for more information.");
         return;
     }
