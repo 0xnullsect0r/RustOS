@@ -30,27 +30,18 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     // loaded its own IDT and initialized every interrupt handler dependency.
     x86_64::instructions::interrupts::disable();
 
-    // Force early initialization of serial port (before enabling interrupts)
-    // The serial port uses lazy_static, which initializes on first access.
-    // If initialization happens AFTER interrupts are enabled, and an interrupt
-    // fires during the lazy_static setup (before the Mutex is fully initialized),
-    // the interrupt handler might try to acquire the partially-initialized Mutex,
-    // causing a deadlock or undefined behavior. By forcing initialization here
-    // while interrupts are still disabled, we ensure thread-safe access later.
-    rustos::serial_println!("[kernel] Initializing serial port early (before interrupts)");
-
-    // Take over the bootloader-provided framebuffer before any code can print
-    // through the VGA fallback. On UEFI systems VGA memory is often absent, so
-    // falling back to 0xb8000 during early exceptions/IRQs can fault and reset.
+    // Take over the bootloader-provided framebuffer before any normal console
+    // output. On real UEFI laptops, legacy VGA and COM1 serial hardware may be
+    // absent, so the GOP framebuffer is the first reliable kernel diagnostic.
     if let Some(framebuffer) = boot_info.framebuffer.take() {
-        rustos::serial_println!("[kernel] Framebuffer available, initializing...");
         unsafe {
             rustos::drivers::framebuffer::init(framebuffer);
         }
-        rustos::serial_println!("[kernel] Framebuffer initialized successfully");
         println!("\n=== RustOS Kernel Initializing ===\n");
+        println!("[kernel] UEFI framebuffer initialized");
     } else {
-        rustos::serial_println!("[kernel] No framebuffer available, using VGA fallback");
+        rustos::drivers::serial::init();
+        rustos::serial_println!("[kernel] No framebuffer available, using serial/VGA fallback");
     }
 
     // Load GDT/IDT and program the PIC now, but do not enable interrupts until

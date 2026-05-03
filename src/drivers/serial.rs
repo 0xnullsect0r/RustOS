@@ -1,24 +1,73 @@
-use lazy_static::lazy_static;
+use core::fmt::{self, Write};
+use core::sync::atomic::{AtomicBool, Ordering};
 use spin::Mutex;
-use uart_16550::{Config, Uart16550Tty, backend::PioBackend};
+use x86_64::instructions::port::Port;
 
-lazy_static! {
-    pub static ref SERIAL1: Mutex<Uart16550Tty<PioBackend>> = Mutex::new(unsafe {
-        Uart16550Tty::new_port(0x3F8, Config::default()).expect("failed to initialize UART")
-    });
+const COM1_PORT: u16 = 0x3f8;
+const SERIAL_SPIN_LIMIT: usize = 10_000;
+
+static SERIAL_LOCK: Mutex<()> = Mutex::new(());
+static SERIAL_INITIALIZED: AtomicBool = AtomicBool::new(false);
+
+/// Best-effort COM1 initialization.
+///
+/// Modern laptops often have no legacy UART at COM1. Port I/O is still safe in
+/// ring 0, but probing libraries can fail or block on absent hardware. Keep this
+/// path non-panicking so early boot never depends on QEMU-style serial hardware.
+pub fn init() {
+    if SERIAL_INITIALIZED.swap(true, Ordering::AcqRel) {
+        return;
+    }
+
+    unsafe {
+        Port::<u8>::new(COM1_PORT + 1).write(0x00); // Disable interrupts
+        Port::<u8>::new(COM1_PORT + 3).write(0x80); // Enable DLAB
+        Port::<u8>::new(COM1_PORT).write(0x03); // 38400 baud divisor low
+        Port::<u8>::new(COM1_PORT + 1).write(0x00); // divisor high
+        Port::<u8>::new(COM1_PORT + 3).write(0x03); // 8N1
+        Port::<u8>::new(COM1_PORT + 2).write(0xc7); // Enable FIFO
+        Port::<u8>::new(COM1_PORT + 4).write(0x0b); // IRQs disabled, RTS/DSR set
+    }
 }
 
 #[doc(hidden)]
 pub fn _print(args: ::core::fmt::Arguments) {
-    use core::fmt::Write;
     use x86_64::instructions::interrupts;
 
     interrupts::without_interrupts(|| {
-        SERIAL1
-            .lock()
-            .write_fmt(args)
-            .expect("Printing to serial failed");
+        let _guard = SERIAL_LOCK.lock();
+        init();
+        let _ = SerialWriter.write_fmt(args);
     });
+}
+
+struct SerialWriter;
+
+impl fmt::Write for SerialWriter {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        for byte in s.bytes() {
+            match byte {
+                b'\n' => {
+                    write_byte(b'\r');
+                    write_byte(b'\n');
+                }
+                byte => write_byte(byte),
+            }
+        }
+        Ok(())
+    }
+}
+
+fn write_byte(byte: u8) {
+    unsafe {
+        let mut line_status = Port::<u8>::new(COM1_PORT + 5);
+        for _ in 0..SERIAL_SPIN_LIMIT {
+            if line_status.read() & 0x20 != 0 {
+                break;
+            }
+        }
+        Port::<u8>::new(COM1_PORT).write(byte);
+    }
 }
 
 /// Prints to the host through the serial interface.
