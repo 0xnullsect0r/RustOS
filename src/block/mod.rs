@@ -10,7 +10,7 @@
 
 extern crate alloc;
 
-use alloc::{string::String, vec::Vec};
+use alloc::{string::{String, ToString}, vec::Vec};
 use x86_64::instructions::port::Port;
 
 use crate::memory::PHYS_MEM_OFFSET;
@@ -108,6 +108,7 @@ impl BlockDev {
 // PCI helpers (re-use from pci module)
 // ---------------------------------------------------------------------------
 
+#[allow(dead_code)]
 fn pci_read32(bus: u8, dev: u8, func: u8, offset: u8) -> u32 {
     let addr: u32 = 0x8000_0000
         | ((bus as u32) << 16)
@@ -122,6 +123,7 @@ fn pci_read32(bus: u8, dev: u8, func: u8, offset: u8) -> u32 {
     }
 }
 
+#[allow(dead_code)]
 fn pci_mmio_bar(bus: u8, dev: u8, func: u8, bar_idx: usize) -> u64 {
     let off = (0x10 + bar_idx * 4) as u8;
     let lo = pci_read32(bus, dev, func, off);
@@ -153,6 +155,7 @@ fn phys_to_virt(phys: u64) -> *mut u8 {
 ///
 /// We use a single pair of admin/IO submission+completion queues set up
 /// in-place; this is a one-shot, polling driver sufficient for sector reads.
+#[allow(dead_code)]
 mod nvme {
     use super::*;
 
@@ -230,8 +233,8 @@ mod nvme {
         // poll, and we return immediately after).
         // Each submission queue entry is 64 bytes; completion 16 bytes.
         const Q_DEPTH: usize = 4;
-        let mut asq = alloc::vec![0u8; Q_DEPTH * 64 + page_size];
-        let mut acq = alloc::vec![0u8; Q_DEPTH * 16 + page_size];
+        let asq = alloc::vec![0u8; Q_DEPTH * 64 + page_size];
+        let acq = alloc::vec![0u8; Q_DEPTH * 16 + page_size];
 
         // Page-align the queues
         let asq_phys = {
@@ -268,7 +271,7 @@ mod nvme {
         }
 
         // Build Identify controller command (opcode 0x06, CNS=1)
-        let mut identify_buf = alloc::vec![0u8; 4096 + page_size];
+        let identify_buf = alloc::vec![0u8; 4096 + page_size];
         let id_phys = {
             let p = identify_buf.as_ptr() as u64;
             ((p + page_size as u64 - 1) & !(page_size as u64 - 1)) - phys_off
@@ -415,7 +418,7 @@ mod ahci {
     }
 
     /// Try to read 1 sector from port `port` LBA 0 into `buf`.
-    fn read_sector(abar: *mut u8, port: usize, lba: u64, buf: &mut [u8; 512]) -> bool {
+    pub fn read_sector(abar: *mut u8, port: usize, lba: u64, buf: &mut [u8; 512]) -> bool {
         let pb = port_base(abar, port);
 
         // Allocate Command List (1 entry × 32 bytes) + Command Table (128B header + 0 PRD)
@@ -572,6 +575,7 @@ mod ahci {
 /// submit-and-poll approach.  Returns None on failure.
 ///
 /// This is intentionally limited to small reads for partition table scanning.
+#[allow(dead_code)]
 fn nvme_read_sector(mmio_phys: u64, lba: u64) -> Option<Vec<u8>> {
     // Re-initialising NVMe for every sector read is costly but correct for a
     // read-only probe (no concurrent I/O, no persistent queues needed).

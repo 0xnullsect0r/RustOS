@@ -226,6 +226,47 @@ else
     mkfs.fat -F 32 -n RUSTOS_ROOT "$STORAGE_PART"
 fi
 
+# Populate the FAT32 root filesystem with a standard directory skeleton so
+# that the kernel has a proper persistent root from first boot.
+echo "Populating FAT32 storage partition with initial directory skeleton..."
+MOUNT_TMP=$(mktemp -d)
+if command -v sudo &>/dev/null && [[ "$(id -u)" -ne 0 ]]; then
+    sudo mount -t vfat "$STORAGE_PART" "$MOUNT_TMP"
+    sudo mkdir -p \
+        "$MOUNT_TMP/bin"  \
+        "$MOUNT_TMP/etc"  \
+        "$MOUNT_TMP/home" \
+        "$MOUNT_TMP/mnt"  \
+        "$MOUNT_TMP/mnt/c" \
+        "$MOUNT_TMP/mnt/d" \
+        "$MOUNT_TMP/proc" \
+        "$MOUNT_TMP/sys"  \
+        "$MOUNT_TMP/tmp"  \
+        "$MOUNT_TMP/usr"  \
+        "$MOUNT_TMP/usr/bin" \
+        "$MOUNT_TMP/var"  \
+        "$MOUNT_TMP/var/log"
+    sudo umount "$MOUNT_TMP"
+else
+    mount -t vfat "$STORAGE_PART" "$MOUNT_TMP"
+    mkdir -p \
+        "$MOUNT_TMP/bin"  \
+        "$MOUNT_TMP/etc"  \
+        "$MOUNT_TMP/home" \
+        "$MOUNT_TMP/mnt"  \
+        "$MOUNT_TMP/mnt/c" \
+        "$MOUNT_TMP/mnt/d" \
+        "$MOUNT_TMP/proc" \
+        "$MOUNT_TMP/sys"  \
+        "$MOUNT_TMP/tmp"  \
+        "$MOUNT_TMP/usr"  \
+        "$MOUNT_TMP/usr/bin" \
+        "$MOUNT_TMP/var"  \
+        "$MOUNT_TMP/var/log"
+    umount "$MOUNT_TMP"
+fi
+rmdir "$MOUNT_TMP"
+
 echo
 echo "Done! '$DRIVE' is ready:"
 echo "  - Partition 1: RustOS boot partition"

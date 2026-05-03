@@ -397,6 +397,17 @@ impl Vfs {
     pub fn list_mounts(&self) -> Vec<String> {
         self.mounts.iter().map(|m| m.prefix.clone()).collect()
     }
+
+    /// Unmount the filesystem at `mount_path`. Returns true if it was mounted.
+    pub fn umount(&mut self, mount_path: &str) -> bool {
+        let norm = normalize(mount_path);
+        if let Some(pos) = self.mounts.iter().position(|m| m.prefix == norm) {
+            self.mounts.remove(pos);
+            true
+        } else {
+            false
+        }
+    }
 }
 
 fn normalize(path: &str) -> String {

@@ -78,15 +78,15 @@ pub fn run_virtual_bin_command(path: &str) -> Option<i64> {
             2
         }
         "lspci" => {
-            crate::shell::commands::cmd_lspci();
+            crate::shell::commands::cmd_lspci(&[]);
             0
         }
         "lsusb" => {
-            crate::shell::commands::cmd_lsusb();
+            crate::shell::commands::cmd_lsusb(&[]);
             0
         }
         "lsblk" => {
-            crate::shell::commands::cmd_lsblk();
+            crate::shell::commands::cmd_lsblk(&[]);
             0
         }
         "ps" => {

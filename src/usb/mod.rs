@@ -107,9 +107,9 @@ impl BlockDevice for PartitionBlockDevice {
 }
 
 #[derive(Clone, Copy)]
-struct PartitionInfo {
-    start_lba: u64,
-    sector_count: u64,
+pub struct PartitionInfo {
+    pub start_lba: u64,
+    pub sector_count: u64,
 }
 
 fn read_u32_le(buf: &[u8], off: usize) -> Option<u32> {
@@ -138,6 +138,11 @@ fn read_u64_le(buf: &[u8], off: usize) -> Option<u64> {
         buf[off + 6],
         buf[off + 7],
     ]))
+}
+
+/// Public wrapper around `gpt_partitions_for_device` for use in shell mount command.
+pub fn gpt_partitions_for_device_pub(dev_idx: usize) -> alloc::vec::Vec<PartitionInfo> {
+    gpt_partitions_for_device(dev_idx)
 }
 
 fn gpt_partitions_for_device(dev_idx: usize) -> alloc::vec::Vec<PartitionInfo> {
