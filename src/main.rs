@@ -81,6 +81,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     rustos::vfs::init();
 
     // Probe PCI for XHCI and mount USB FAT32
+    rustos::net::init();
     init_usb_storage();
     rustos::task::keyboard::init();
     rustos::enable_interrupts();

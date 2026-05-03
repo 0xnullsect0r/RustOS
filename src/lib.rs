@@ -13,6 +13,7 @@ pub mod arch;
 pub mod bin_commands;
 pub mod drivers;
 pub mod fs;
+pub mod net;
 pub mod pci;
 pub mod process;
 pub mod shell;

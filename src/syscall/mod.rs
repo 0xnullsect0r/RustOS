@@ -61,9 +61,13 @@ fn dispatch(nr: u64, a1: u64, a2: u64, a3: u64) {
             sys_exit(a1 as i64);
             0
         }
-        _ => {
-            crate::serial_println!("[syscall] unknown nr={}", nr);
-            -38 // -ENOSYS (function not implemented)
+        nr => {
+            if let Some(ret) = crate::net::dispatch_syscall(nr, a1, a2, a3) {
+                ret
+            } else {
+                crate::serial_println!("[syscall] unknown nr={}", nr);
+                -38 // -ENOSYS (function not implemented)
+            }
         }
     };
     unsafe {

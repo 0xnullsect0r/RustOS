@@ -1,3 +1,6 @@
 [submodule "third_party/rsh"]
 	path = third_party/rsh
 	url = https://github.com/RustOS-Dev/rsh
+[submodule "third_party/tcp-ip"]
+	path = third_party/tcp-ip
+	url = https://github.com/RustOS-Dev/tcp-ip

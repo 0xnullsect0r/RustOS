@@ -23,6 +23,7 @@ pub fn dispatch(shell: &mut Shell, cmd: &str, args: &[&str]) {
         "mv" => cmd_mv(shell, args),
         "meminfo" => cmd_meminfo(),
         "mount" => cmd_mount(),
+        "net" => cmd_net(),
         "exec" => cmd_exec(shell, args),
         "usbscan" => cmd_usbscan(),
         "reboot" => cmd_reboot(),
@@ -48,6 +49,7 @@ fn cmd_help() {
     crate::println!("  mv <src> <dst>    - Move or rename a file/directory");
     crate::println!("  meminfo           - Show heap memory information");
     crate::println!("  mount             - Show mounted filesystems");
+    crate::println!("  net               - Show tcp-ip stack and WiFi status");
     crate::println!("  exec <path>       - Execute an ELF binary from the VFS");
     crate::println!("  usbscan           - Scan for newly plugged-in USB drives and mount them");
     crate::println!("  reboot            - Reboot the system");
@@ -281,6 +283,10 @@ fn cmd_mount() {
         }
         None => crate::println!("mount: VFS not initialised"),
     }
+}
+
+fn cmd_net() {
+    crate::net::print_status();
 }
 
 fn cmd_exec(shell: &mut Shell, args: &[&str]) {

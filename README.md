@@ -1,7 +1,7 @@
 # RustOS
 
 A minimal x86_64 operating system kernel written in Rust, featuring a userspace shell (`rsh`),
-virtual filesystem, USB mass-storage support, and a Rust userspace runtime.
+virtual filesystem, USB mass-storage support, tcp-ip stack integration, and a Rust userspace runtime.
 
 Built on the foundation of [Philipp Oppermann's "Writing an OS in Rust"](https://os.phil-opp.com/)
 tutorial series (through post-12), then extended with a modular architecture, VFS layer,
@@ -22,6 +22,7 @@ XHCI USB driver, FAT32 filesystem, ELF process loader, and a userspace shell env
 - **USB Mass Storage (BOT/SCSI)** — reads and writes sectors on USB flash drives
 - **FAT32 driver** — short names, long file names (LFN), cluster-chain traversal, file create/overwrite
 - **Hot-plug USB** — `usbscan` command detects newly connected drives and mounts them
+- **TCP/IP + WiFi integration** — `third_party/tcp-ip` submodule ABI hooks, AX210 discovery, and network syscalls
 - **ELF process loader** — maps PT_LOAD segments and jumps to userspace entry points
 - **`int 0x80` syscall interface** — `SYS_READ`, `SYS_WRITE`, `SYS_EXIT`, `SYS_OPEN`, `SYS_CLOSE`
 - **[rustos-rt](../../tree/rustos-rt)** — companion Rust userspace runtime crate (separate branch)
@@ -41,7 +42,11 @@ Legacy kernel commands are exposed as `/bin/*` executables for `rsh` execution:
 `/bin/help`, `/bin/echo`, `/bin/clear`, `/bin/uname`, `/bin/color`, `/bin/pwd`,
 `/bin/ls`, `/bin/cd`, `/bin/mkdir`, `/bin/rm`, `/bin/cat`, `/bin/write`,
 `/bin/cp`, `/bin/mv`, `/bin/meminfo`, `/bin/mount`, `/bin/exec`, `/bin/usbscan`,
-`/bin/reboot`, `/bin/rsh`.
+`/bin/reboot`, `/bin/rsh`, `/bin/net`.
+
+The `net` command reports the pinned tcp-ip submodule and detected WiFi device.
+The tcp-ip userspace tools (`wifi`, `ping`, `ifconfig`, `netstat`) are provided
+by `third_party/tcp-ip` and can be built as RustOS ELFs and copied to `/bin`.
 
 ## USB flash drive workflow
 
@@ -138,7 +143,8 @@ crates/
 └── rustos-rt/            # Userspace Rust runtime (also on branch rustos-rt)
 
 third_party/
-└── rsh/                  # Shell submodule source (userspace program)
+├── rsh/                  # Shell submodule source (userspace program)
+└── tcp-ip/               # TCP/IP + WiFi stack submodule source
 ```
 
 ## Building and running
@@ -241,7 +247,7 @@ Every push and pull request runs:
 
 ## Submodules
 
-Clone/update with submodules so `rsh` is available:
+Clone/update with submodules so `rsh` and `tcp-ip` are available:
 
 ```sh
 git submodule update --init --recursive

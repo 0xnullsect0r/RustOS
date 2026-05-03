@@ -2,7 +2,7 @@ use crate::vfs::{NodeType, VFS};
 
 const VIRTUAL_BIN_COMMANDS: &[&str] = &[
     "help", "echo", "clear", "uname", "color", "pwd", "ls", "cd", "mkdir", "rm", "cat", "write",
-    "cp", "mv", "meminfo", "mount", "exec", "usbscan", "reboot", "rsh",
+    "cp", "mv", "meminfo", "mount", "exec", "usbscan", "reboot", "rsh", "net",
 ];
 
 pub fn virtual_bin_commands() -> &'static [&'static str] {
@@ -32,6 +32,7 @@ pub fn run_virtual_bin_command(path: &str) -> Option<i64> {
         "ls" => cmd_ls(),
         "meminfo" => cmd_meminfo(),
         "mount" => cmd_mount(),
+        "net" => cmd_net(),
         "usbscan" => cmd_usbscan(),
         "reboot" => cmd_reboot(),
         "rsh" => {
@@ -150,6 +151,11 @@ fn cmd_mount() -> i64 {
         }
         None => crate::println!("mount: VFS not initialised"),
     }
+    0
+}
+
+fn cmd_net() -> i64 {
+    crate::net::print_status();
     0
 }
 
