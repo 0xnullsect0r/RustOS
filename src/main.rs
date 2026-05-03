@@ -88,6 +88,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     #[cfg(test)]
     test_main();
 
+    // This enters the interactive shell loop and never returns.
     launch_kernel_shell();
 }
 
