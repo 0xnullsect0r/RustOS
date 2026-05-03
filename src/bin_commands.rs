@@ -2,7 +2,8 @@ use crate::vfs::{NodeType, VFS};
 
 const VIRTUAL_BIN_COMMANDS: &[&str] = &[
     "help", "echo", "clear", "uname", "color", "pwd", "ls", "cd", "mkdir", "rm", "cat", "write",
-    "cp", "mv", "meminfo", "mount", "exec", "usbscan", "reboot", "rsh", "net",
+    "cp", "mv", "meminfo", "mount", "exec", "usbscan", "reboot", "rsh", "net", "lspci", "lsusb",
+    "lsblk", "grep", "ps",
 ];
 
 pub fn virtual_bin_commands() -> &'static [&'static str] {
@@ -73,6 +74,26 @@ pub fn run_virtual_bin_command(path: &str) -> Option<i64> {
         }
         "exec" => {
             crate::println!("Usage: /bin/exec <path>");
+            2
+        }
+        "lspci" => {
+            crate::shell::commands::cmd_lspci();
+            0
+        }
+        "lsusb" => {
+            crate::shell::commands::cmd_lsusb();
+            0
+        }
+        "lsblk" => {
+            crate::shell::commands::cmd_lsblk();
+            0
+        }
+        "ps" => {
+            crate::shell::commands::cmd_ps(&[]);
+            0
+        }
+        "grep" => {
+            crate::println!("Usage: /bin/grep <pattern> <file>");
             2
         }
         _ => 127,
