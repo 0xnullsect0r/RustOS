@@ -1108,7 +1108,11 @@ fn cmd_umount(shell: &mut Shell, args: &[&str]) {
 // ---------------------------------------------------------------------------
 
 fn cmd_net() {
-    crate::net::print_status();
+    if let Some(s) = tcp_ip::kernel::status_str() {
+        crate::println!("{}", s);
+    } else {
+        crate::println!("wlan0: driver not active (no AX210 found or init failed)");
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1837,12 +1841,44 @@ pub fn cmd_ps(args: &[&str]) {
 pub fn cmd_wifi(args: &[&str]) {
     match args.first().copied().unwrap_or("status") {
         "status" | "" => {
-            crate::println!("WiFi status:");
-            crate::net::print_status();
+            if let Some(s) = tcp_ip::kernel::status_str() {
+                crate::println!("{}", s);
+            } else {
+                crate::println!("wlan0: driver not active (no AX210 found or init failed)");
+            }
         }
         "scan" => {
             crate::println!("Scanning for wireless networks...");
-            crate::println!("(No 802.11 hardware found or driver not ready)");
+            let mut buf = [0u8; 4096];
+            match tcp_ip::kernel::dispatch_syscall(
+                tcp_ip::sys::SYS_WIFI_SCAN,
+                buf.as_mut_ptr() as u64,
+                buf.len() as u64,
+                0,
+            ) {
+                Some(n) if n > 0 => {
+                    let results = tcp_ip::wifi::scan::deserialise(&buf[..n as usize]);
+                    if results.is_empty() {
+                        crate::println!("wifi: no networks found");
+                        return;
+                    }
+                    for r in results {
+                        let ssid = core::str::from_utf8(
+                            &r.ssid[..r.ssid_len as usize]
+                        ).unwrap_or("<invalid UTF-8>");
+                        crate::println!(
+                            "  SSID: {:32}  Signal: -{} dBm  Channel: {}",
+                            ssid, r.signal_strength, r.channel
+                        );
+                    }
+                }
+                Some(n) if n < 0 => {
+                    crate::println!("wifi scan: error code {}", n);
+                }
+                _ => {
+                    crate::println!("wifi scan: driver not ready or no AX210 device");
+                }
+            }
         }
         "connect" => {
             if args.len() < 2 {

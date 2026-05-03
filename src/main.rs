@@ -91,6 +91,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     // Probe PCI for XHCI and mount USB FAT32
     rustos::net::init();
     init_usb_storage();
+    init_network();
     rustos::task::keyboard::init();
     rustos::enable_interrupts();
 
@@ -143,6 +144,55 @@ fn init_usb_storage() {
 
     // Mount all found devices under /usb* (device 0 → /usb, device 1 → /usb1, …).
     rustos::usb::mount_storage_devices(0);
+}
+
+/// Locate the AX210 on the PCI bus, enable Bus Master, map BAR0 via the
+/// physical memory offset, and hand the virtual address to the tcp-ip driver.
+fn init_network() {
+    use rustos::pci;
+    use core::sync::atomic::Ordering;
+
+    let devices = pci::enumerate();
+    let dev = match pci::find_ax210(&devices) {
+        Some(d) => d,
+        None => {
+            rustos::serial_println!("[net] no AX210-family device found");
+            return;
+        }
+    };
+
+    rustos::serial_println!(
+        "[net] AX210 found: {:04x}:{:04x} at {:02x}:{:02x}.{}",
+        dev.vendor_id, dev.device_id, dev.bus, dev.dev, dev.func
+    );
+
+    pci::enable_bus_master(dev.bus, dev.dev, dev.func);
+
+    let bar0_phys = dev.mmio_base(0);
+    if bar0_phys == 0 {
+        rustos::serial_println!("[net] AX210 BAR0 is zero — not assigned by firmware");
+        return;
+    }
+
+    // Physical memory is linearly mapped at PHYS_MEM_OFFSET.
+    let phys_offset = rustos::memory::PHYS_MEM_OFFSET.load(Ordering::Relaxed);
+    let bar0_virt = phys_offset + bar0_phys;
+
+    rustos::serial_println!(
+        "[net] AX210 BAR0 phys=0x{:x} virt=0x{:x}", bar0_phys, bar0_virt
+    );
+
+    unsafe {
+        tcp_ip::kernel::init(bar0_virt);
+    }
+
+    if tcp_ip::kernel::is_active() {
+        rustos::serial_println!("[net] tcp-ip driver active");
+    } else {
+        rustos::serial_println!(
+            "[net] tcp-ip driver init failed — check NIC_READY timeout or missing firmware"
+        );
+    }
 }
 
 /// Runs the default rsh-compatible shell using the framebuffer output.
