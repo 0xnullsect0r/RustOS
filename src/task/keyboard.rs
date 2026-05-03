@@ -2,6 +2,7 @@ use crate::{print, println};
 use conquer_once::spin::OnceCell;
 use core::{
     pin::Pin,
+    sync::atomic::{AtomicBool, Ordering},
     task::{Context, Poll},
 };
 use crossbeam_queue::ArrayQueue;
@@ -15,8 +16,7 @@ use spin::Mutex;
 
 static SCANCODE_QUEUE: OnceCell<ArrayQueue<u8>> = OnceCell::uninit();
 static WAKER: AtomicWaker = AtomicWaker::new();
-static KEYBOARD_IRQ_SEEN: core::sync::atomic::AtomicBool =
-    core::sync::atomic::AtomicBool::new(false);
+static KEYBOARD_IRQ_SEEN: AtomicBool = AtomicBool::new(false);
 lazy_static! {
     static ref KEYBOARD_DECODER: Mutex<Keyboard<layouts::Us104Key, ScancodeSet1>> =
         Mutex::new(Keyboard::new(
@@ -38,7 +38,7 @@ pub fn init() {
 ///
 /// Must not block or allocate.
 pub(crate) fn add_scancode(scancode: u8) {
-    KEYBOARD_IRQ_SEEN.store(true, core::sync::atomic::Ordering::Relaxed);
+    KEYBOARD_IRQ_SEEN.store(true, Ordering::Relaxed);
 
     if let Ok(queue) = SCANCODE_QUEUE.try_get() {
         if queue.push(scancode).is_err() {
@@ -122,7 +122,7 @@ pub fn read_input_byte() -> Option<u8> {
 }
 
 pub fn interrupt_input_observed() -> bool {
-    KEYBOARD_IRQ_SEEN.load(core::sync::atomic::Ordering::Relaxed)
+    KEYBOARD_IRQ_SEEN.load(Ordering::Relaxed)
 }
 
 fn decode_scancode(scancode: u8) -> Option<u8> {

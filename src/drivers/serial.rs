@@ -4,6 +4,13 @@ use spin::Mutex;
 use x86_64::instructions::port::Port;
 
 const COM1_PORT: u16 = 0x3f8;
+const DATA_OFFSET: u16 = 0;
+const INTERRUPT_ENABLE_OFFSET: u16 = 1;
+const FIFO_CONTROL_OFFSET: u16 = 2;
+const LINE_CONTROL_OFFSET: u16 = 3;
+const MODEM_CONTROL_OFFSET: u16 = 4;
+const LINE_STATUS_OFFSET: u16 = 5;
+const TRANSMIT_EMPTY_BIT: u8 = 0x20;
 const SERIAL_SPIN_LIMIT: usize = 10_000;
 
 static SERIAL_LOCK: Mutex<()> = Mutex::new(());
@@ -20,13 +27,19 @@ pub fn init() {
     }
 
     unsafe {
-        Port::<u8>::new(COM1_PORT + 1).write(0x00); // Disable interrupts
-        Port::<u8>::new(COM1_PORT + 3).write(0x80); // Enable DLAB
-        Port::<u8>::new(COM1_PORT).write(0x03); // 38400 baud divisor low
-        Port::<u8>::new(COM1_PORT + 1).write(0x00); // divisor high
-        Port::<u8>::new(COM1_PORT + 3).write(0x03); // 8N1
-        Port::<u8>::new(COM1_PORT + 2).write(0xc7); // Enable FIFO
-        Port::<u8>::new(COM1_PORT + 4).write(0x0b); // IRQs disabled, RTS/DSR set
+        let mut data = Port::<u8>::new(COM1_PORT + DATA_OFFSET);
+        let mut interrupt_enable = Port::<u8>::new(COM1_PORT + INTERRUPT_ENABLE_OFFSET);
+        let mut fifo_control = Port::<u8>::new(COM1_PORT + FIFO_CONTROL_OFFSET);
+        let mut line_control = Port::<u8>::new(COM1_PORT + LINE_CONTROL_OFFSET);
+        let mut modem_control = Port::<u8>::new(COM1_PORT + MODEM_CONTROL_OFFSET);
+
+        interrupt_enable.write(0x00); // Disable interrupts
+        line_control.write(0x80); // Enable DLAB
+        data.write(0x03); // 38400 baud divisor low
+        interrupt_enable.write(0x00); // divisor high
+        line_control.write(0x03); // 8N1
+        fifo_control.write(0xc7); // Enable FIFO
+        modem_control.write(0x0b); // IRQs disabled, RTS/DSR set
     }
 }
 
@@ -60,9 +73,9 @@ impl fmt::Write for SerialWriter {
 
 fn write_byte(byte: u8) {
     unsafe {
-        let mut line_status = Port::<u8>::new(COM1_PORT + 5);
+        let mut line_status = Port::<u8>::new(COM1_PORT + LINE_STATUS_OFFSET);
         for _ in 0..SERIAL_SPIN_LIMIT {
-            if line_status.read() & 0x20 != 0 {
+            if line_status.read() & TRANSMIT_EMPTY_BIT != 0 {
                 break;
             }
             core::hint::spin_loop();
@@ -70,7 +83,7 @@ fn write_byte(byte: u8) {
         // If absent hardware never reports ready, still attempt the byte once.
         // This keeps serial diagnostic output best-effort rather than blocking
         // boot on real laptops without COM1.
-        Port::<u8>::new(COM1_PORT).write(byte);
+        Port::<u8>::new(COM1_PORT + DATA_OFFSET).write(byte);
     }
 }
 
