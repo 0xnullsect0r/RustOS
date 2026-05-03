@@ -81,10 +81,7 @@ pub fn run_virtual_bin_command(path: &str) -> Option<i64> {
 }
 
 fn cmd_help() -> i64 {
-    crate::println!("RustOS /bin commands:");
-    for cmd in VIRTUAL_BIN_COMMANDS {
-        crate::println!("  /bin/{}", cmd);
-    }
+    crate::shell::commands::print_help();
     0
 }
 

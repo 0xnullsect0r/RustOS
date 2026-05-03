@@ -7,7 +7,7 @@ use crate::vfs::{NodeType, VFS};
 /// Dispatch a parsed command name and argument list to the appropriate handler.
 pub fn dispatch(shell: &mut Shell, cmd: &str, args: &[&str]) {
     match cmd {
-        "help" => cmd_help(),
+        "help" => print_help(),
         "echo" => cmd_echo(args),
         "clear" => cmd_clear(),
         "uname" => cmd_uname(),
@@ -31,7 +31,7 @@ pub fn dispatch(shell: &mut Shell, cmd: &str, args: &[&str]) {
     }
 }
 
-fn cmd_help() {
+pub fn print_help() {
     crate::println!("Built-in commands:");
     crate::println!("  help              - Show this help message");
     crate::println!("  echo <text>       - Print text to the screen");
@@ -53,6 +53,11 @@ fn cmd_help() {
     crate::println!("  exec <path>       - Execute an ELF binary from the VFS");
     crate::println!("  usbscan           - Scan for newly plugged-in USB drives and mount them");
     crate::println!("  reboot            - Reboot the system");
+    crate::println!();
+    crate::println!("/bin commands:");
+    for cmd in crate::bin_commands::virtual_bin_commands() {
+        crate::println!("  /bin/{}", cmd);
+    }
 }
 
 fn cmd_echo(args: &[&str]) {
