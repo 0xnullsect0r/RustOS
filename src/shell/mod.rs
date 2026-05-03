@@ -34,6 +34,12 @@ impl Shell {
     /// Process a single decoded unicode character from the keyboard.
     pub fn handle_char(&mut self, c: char) {
         match c {
+            // Ctrl+C — cancel the current input line and show a fresh prompt.
+            '\x03' => {
+                crate::println!("^C");
+                self.input_buf.clear();
+                self.print_prompt();
+            }
             '\n' | '\r' => {
                 crate::println!();
                 let line = self.input_buf.clone();

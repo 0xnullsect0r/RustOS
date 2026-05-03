@@ -22,7 +22,7 @@ lazy_static! {
         Mutex::new(Keyboard::new(
             ScancodeSet1::new(),
             layouts::Us104Key,
-            HandleControl::Ignore,
+            HandleControl::MapLettersToUnicode,
         ));
 }
 
@@ -142,7 +142,12 @@ fn decode_event(scancode: u8) -> Option<InputEvent> {
     let key_event = keyboard.add_byte(scancode).ok()??;
     let key = keyboard.process_keyevent(key_event)?;
     match key {
-        DecodedKey::Unicode(c) if c.is_ascii() => Some(InputEvent::Char(c as u8)),
+        // Ctrl+C (ETX, 0x03) — pass through so the shell can clear the line.
+        DecodedKey::Unicode('\x03') => Some(InputEvent::Char(0x03)),
+        DecodedKey::Unicode(c) if c.is_ascii() && !c.is_ascii_control() => {
+            Some(InputEvent::Char(c as u8))
+        }
+        DecodedKey::Unicode('\n') | DecodedKey::Unicode('\r') => Some(InputEvent::Char(b'\n')),
         DecodedKey::RawKey(KeyCode::Backspace) => Some(InputEvent::Char(0x08)),
         DecodedKey::RawKey(KeyCode::ArrowUp) => Some(InputEvent::ArrowUp),
         DecodedKey::RawKey(KeyCode::ArrowDown) => Some(InputEvent::ArrowDown),
