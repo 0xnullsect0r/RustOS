@@ -30,6 +30,12 @@ pub struct FrameBufferWriter {
     foreground: Color,
     background: Color,
 
+    // ── shadow buffer (heap-backed; empty until enable_scrollback() is called) ──
+    /// CPU-side copy of the framebuffer. All pixel writes go here; a single
+    /// `flush()` blits everything to the real hardware framebuffer at once,
+    /// eliminating visible scan-line artefacts.
+    shadow: Vec<u8>,
+
     // ── scrollback (heap-backed; None until enable_scrollback() is called) ──
     /// Completed lines, oldest at the front.
     scrollback: Option<VecDeque<Vec<u8>>>,
@@ -91,17 +97,24 @@ impl FrameBufferWriter {
             y_pos: 0,
             foreground: Color::YELLOW,
             background: Color::BLACK,
+            shadow: Vec::new(), // allocated post-heap via enable_scrollback()
             scrollback: None,
             current_line: Vec::new(),
             scroll_offset: 0,
         }
     }
 
-    /// Enables the heap-backed scrollback buffer.  Must be called after the
-    /// global allocator is initialised (i.e. after `allocator::init_heap`).
+    /// Enables the heap-backed scrollback buffer and shadow framebuffer.
+    /// Must be called after the global allocator is initialised (i.e. after
+    /// `allocator::init_heap`).
     pub fn enable_scrollback(&mut self) {
         if self.scrollback.is_none() {
             self.scrollback = Some(VecDeque::new());
+        }
+        // Initialise the shadow buffer from the current hardware framebuffer so
+        // that the first flush() doesn't overwrite anything already on screen.
+        if self.shadow.is_empty() {
+            self.shadow = self.framebuffer.to_vec();
         }
     }
 
@@ -121,6 +134,7 @@ impl FrameBufferWriter {
         if self.scroll_offset < max_offset {
             self.scroll_offset += 1;
             self.redraw_current_view();
+            self.flush();
         }
     }
 
@@ -131,6 +145,7 @@ impl FrameBufferWriter {
         }
         self.scroll_offset -= 1;
         self.redraw_current_view();
+        self.flush();
     }
 
     /// Repaint the framebuffer from the scrollback buffer for the current
@@ -196,12 +211,28 @@ impl FrameBufferWriter {
         }
         let pixel_offset = y * self.info.stride + x;
         let byte_offset = pixel_offset * self.info.bytes_per_pixel;
-        if byte_offset + self.info.bytes_per_pixel > self.framebuffer.len() {
-            return;
-        }
-        let bytes = self.color_to_bytes(color);
         let bpp = self.info.bytes_per_pixel.min(4);
-        self.framebuffer[byte_offset..byte_offset + bpp].copy_from_slice(&bytes[..bpp]);
+        let end = byte_offset + bpp;
+        let bytes = self.color_to_bytes(color);
+        if self.shadow.is_empty() {
+            if end > self.framebuffer.len() {
+                return;
+            }
+            self.framebuffer[byte_offset..end].copy_from_slice(&bytes[..bpp]);
+        } else {
+            if end > self.shadow.len() {
+                return;
+            }
+            self.shadow[byte_offset..end].copy_from_slice(&bytes[..bpp]);
+        }
+    }
+
+    /// Copy the shadow buffer to the real hardware framebuffer in one shot.
+    /// No-op when the shadow buffer has not yet been allocated.
+    fn flush(&mut self) {
+        if !self.shadow.is_empty() {
+            self.framebuffer.copy_from_slice(&self.shadow);
+        }
     }
 
     /// Encode `color` into the framebuffer's byte order.
@@ -217,8 +248,14 @@ impl FrameBufferWriter {
     fn fill_background(&mut self) {
         let bpp = self.info.bytes_per_pixel;
         let bg_bytes = self.color_to_bytes(self.background);
-        for chunk in self.framebuffer.chunks_mut(bpp) {
-            chunk.copy_from_slice(&bg_bytes[..chunk.len()]);
+        if self.shadow.is_empty() {
+            for chunk in self.framebuffer.chunks_mut(bpp) {
+                chunk.copy_from_slice(&bg_bytes[..chunk.len()]);
+            }
+        } else {
+            for chunk in self.shadow.chunks_mut(bpp) {
+                chunk.copy_from_slice(&bg_bytes[..chunk.len()]);
+            }
         }
     }
 
@@ -227,6 +264,7 @@ impl FrameBufferWriter {
         self.fill_background();
         self.x_pos = 0;
         self.y_pos = 0;
+        self.flush();
     }
 
     /// Calculates the maximum number of characters that fit on one line.
@@ -244,20 +282,28 @@ impl FrameBufferWriter {
         let bpp = self.info.bytes_per_pixel;
         let row_stride = self.info.stride * bpp;
         let scroll_bytes = FONT_HEIGHT * row_stride;
-        let fb_len = self.framebuffer.len();
-
-        if scroll_bytes >= fb_len {
-            return;
-        }
-
-        // Shift everything up by FONT_HEIGHT pixel rows in one memmove.
-        self.framebuffer.copy_within(scroll_bytes..fb_len, 0);
-
-        // Blank the last FONT_HEIGHT rows.
-        let clear_start = fb_len.saturating_sub(scroll_bytes);
         let bg_bytes = self.color_to_bytes(self.background);
-        for chunk in self.framebuffer[clear_start..].chunks_mut(bpp) {
-            chunk.copy_from_slice(&bg_bytes[..chunk.len()]);
+
+        if self.shadow.is_empty() {
+            let fb_len = self.framebuffer.len();
+            if scroll_bytes >= fb_len {
+                return;
+            }
+            self.framebuffer.copy_within(scroll_bytes..fb_len, 0);
+            let clear_start = fb_len.saturating_sub(scroll_bytes);
+            for chunk in self.framebuffer[clear_start..].chunks_mut(bpp) {
+                chunk.copy_from_slice(&bg_bytes[..chunk.len()]);
+            }
+        } else {
+            let sb_len = self.shadow.len();
+            if scroll_bytes >= sb_len {
+                return;
+            }
+            self.shadow.copy_within(scroll_bytes..sb_len, 0);
+            let clear_start = sb_len.saturating_sub(scroll_bytes);
+            for chunk in self.shadow[clear_start..].chunks_mut(bpp) {
+                chunk.copy_from_slice(&bg_bytes[..chunk.len()]);
+            }
         }
     }
 
@@ -364,6 +410,9 @@ impl FrameBufferWriter {
                 _ => self.write_byte(0xfe), // Unprintable character
             }
         }
+        // Blit all accumulated pixel changes to the hardware framebuffer in one
+        // shot so the entire string appears atomically (no visible scan-line).
+        self.flush();
     }
 }
 
