@@ -65,6 +65,7 @@ fn write_byte(byte: u8) {
             if line_status.read() & 0x20 != 0 {
                 break;
             }
+            core::hint::spin_loop();
         }
         // If absent hardware never reports ready, still attempt the byte once.
         // This keeps serial diagnostic output best-effort rather than blocking

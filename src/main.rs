@@ -149,9 +149,12 @@ fn launch_kernel_shell() -> ! {
         // Wait for keyboard input
         if let Some(byte) = rustos::task::keyboard::read_input_byte() {
             shell.handle_char(byte as char);
+        } else if rustos::task::keyboard::interrupt_input_observed() {
+            x86_64::instructions::hlt();
         } else {
-            // Keep polling too: some real laptops expose PS/2-compatible
-            // keyboard data but do not route IRQ1 through the legacy PIC.
+            // Before seeing any IRQ1 traffic, do not halt: some real laptops
+            // expose PS/2-compatible keyboard data only through polling after
+            // UEFI handoff. Once an IRQ arrives, the branch above can hlt.
             core::hint::spin_loop();
         }
     }

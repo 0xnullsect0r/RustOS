@@ -15,6 +15,8 @@ use spin::Mutex;
 
 static SCANCODE_QUEUE: OnceCell<ArrayQueue<u8>> = OnceCell::uninit();
 static WAKER: AtomicWaker = AtomicWaker::new();
+static KEYBOARD_IRQ_SEEN: core::sync::atomic::AtomicBool =
+    core::sync::atomic::AtomicBool::new(false);
 lazy_static! {
     static ref KEYBOARD_DECODER: Mutex<Keyboard<layouts::Us104Key, ScancodeSet1>> =
         Mutex::new(Keyboard::new(
@@ -36,6 +38,8 @@ pub fn init() {
 ///
 /// Must not block or allocate.
 pub(crate) fn add_scancode(scancode: u8) {
+    KEYBOARD_IRQ_SEEN.store(true, core::sync::atomic::Ordering::Relaxed);
+
     if let Ok(queue) = SCANCODE_QUEUE.try_get() {
         if queue.push(scancode).is_err() {
             println!("WARNING: scancode queue full; dropping keyboard input");
@@ -110,8 +114,15 @@ pub async fn print_keypresses() {
 
 pub fn read_input_byte() -> Option<u8> {
     let queue = SCANCODE_QUEUE.try_get().ok()?;
+    // Prefer interrupt-delivered scancodes. The direct PS/2 poll is a
+    // real-hardware fallback for laptops whose firmware exposes i8042 keyboard
+    // data but does not route IRQ1 through the legacy PIC after UEFI handoff.
     let scancode = queue.pop().or_else(poll_ps2_scancode)?;
     decode_scancode(scancode)
+}
+
+pub fn interrupt_input_observed() -> bool {
+    KEYBOARD_IRQ_SEEN.load(core::sync::atomic::Ordering::Relaxed)
 }
 
 fn decode_scancode(scancode: u8) -> Option<u8> {

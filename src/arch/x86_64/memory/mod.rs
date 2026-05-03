@@ -105,9 +105,10 @@ pub fn map_user_segment(virt_base: u64, size: usize) -> Result<(), MapToError<Si
         let virt = VirtAddr::new(virt_base + i * 4096);
         let page = Page::<Size4KiB>::containing_address(virt);
 
-        // ELF PT_LOAD segments are allowed to share boundary pages. If a prior
-        // segment already mapped this page, keep the existing mapping and let
-        // the loader copy the next segment's bytes into the shared page.
+        // ELF PT_LOAD segments are allowed to share boundary pages. RustOS maps
+        // user segments with one writable page policy today, so overlapping
+        // pages cannot have conflicting per-segment flags here; keep the first
+        // mapping and let the loader copy the next segment's bytes into it.
         if mapper.translate_page(page).is_ok() {
             continue;
         }
