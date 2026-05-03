@@ -15,8 +15,11 @@ pub mod trb;
 use crate::memory::{dma_alloc, map_mmio_region};
 use crate::pci::PciDevice;
 use alloc::vec::Vec;
+use core::sync::atomic::{AtomicU32, Ordering};
 use ring::{CommandRing, EventRing, TransferRing};
 use trb::*;
+
+static SCSI_TAG: AtomicU32 = AtomicU32::new(1);
 
 // ---------------------------------------------------------------------------
 // XHCI register offsets (all relative to MMIO BAR0)
@@ -778,11 +781,7 @@ impl Xhci {
         cdb: &[u8],
         data_in: Option<usize>,
     ) -> Option<alloc::vec::Vec<u8>> {
-        static mut TAG: u32 = 1;
-        let tag = unsafe { TAG };
-        unsafe {
-            TAG = TAG.wrapping_add(1);
-        }
+        let tag = SCSI_TAG.fetch_add(1, Ordering::Relaxed);
 
         let transfer_len = data_in.unwrap_or(0);
 
@@ -813,11 +812,7 @@ impl Xhci {
     }
 
     fn scsi_write_command(&mut self, dev_idx: usize, cdb: &[u8], data: &[u8]) -> Option<()> {
-        static mut TAG: u32 = 0x8000_0000;
-        let tag = unsafe { TAG };
-        unsafe {
-            TAG = TAG.wrapping_add(1);
-        }
+        let tag = SCSI_TAG.fetch_add(1, Ordering::Relaxed);
 
         let mut cbw = [0u8; 31];
         cbw[0..4].copy_from_slice(&0x43425355u32.to_le_bytes());

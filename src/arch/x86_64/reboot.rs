@@ -17,14 +17,12 @@ pub fn reboot() -> ! {
     crate::println!("Rebooting...");
     x86_64::instructions::interrupts::disable();
 
-    unsafe {
-        pci_reset();
-        i8042_reset();
-        triple_fault();
-    }
+    pci_reset();
+    i8042_reset();
+    triple_fault();
 }
 
-unsafe fn pci_reset() {
+fn pci_reset() {
     let mut reset_control = Port::<u8>::new(PCI_RESET_CONTROL_PORT);
     unsafe {
         reset_control.write(PCI_RESET_FULL);
@@ -32,7 +30,7 @@ unsafe fn pci_reset() {
     spin_after_reset_attempt();
 }
 
-unsafe fn i8042_reset() {
+fn i8042_reset() {
     let mut status = Port::<u8>::new(I8042_STATUS_PORT);
     for _ in 0..100_000 {
         let busy = unsafe { status.read() } & I8042_INPUT_BUFFER_FULL != 0;
@@ -49,7 +47,7 @@ unsafe fn i8042_reset() {
     spin_after_reset_attempt();
 }
 
-unsafe fn triple_fault() -> ! {
+fn triple_fault() -> ! {
     let empty_idt = DescriptorTablePointer {
         limit: 0,
         base: VirtAddr::new(0),

@@ -127,13 +127,7 @@ impl Filesystem for Fat32Mount {
     fn list_dir(&mut self, path: &str) -> VfsResult<Vec<DirEntry>> {
         let norm = normalize(path);
         if norm == "/bin" {
-            return Ok(crate::bin_commands::virtual_bin_commands()
-                .iter()
-                .map(|name| DirEntry {
-                    name: (*name).to_string(),
-                    node_type: NodeType::File,
-                })
-                .collect());
+            return Ok(virtual_bin_entries());
         }
         let entries = self.0.list(path).ok_or(VfsError::NotFound)?;
         Ok(entries
@@ -277,13 +271,7 @@ impl Vfs {
     pub fn list_dir(&mut self, path: &str) -> VfsResult<Vec<DirEntry>> {
         let norm = normalize(path);
         if norm == "/bin" {
-            return Ok(crate::bin_commands::virtual_bin_commands()
-                .iter()
-                .map(|name| DirEntry {
-                    name: (*name).to_string(),
-                    node_type: NodeType::File,
-                })
-                .collect());
+            return Ok(virtual_bin_entries());
         }
         let (fs, rel) = self.route(path);
         let mut entries = fs.list_dir(&rel)?;
@@ -402,6 +390,16 @@ impl Vfs {
 
 fn normalize(path: &str) -> String {
     crate::vfs::ramfs::RamFs::pub_normalize(path)
+}
+
+fn virtual_bin_entries() -> Vec<DirEntry> {
+    crate::bin_commands::virtual_bin_commands()
+        .iter()
+        .map(|name| DirEntry {
+            name: (*name).to_string(),
+            node_type: NodeType::File,
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------

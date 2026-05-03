@@ -489,6 +489,7 @@ impl Fat32Fs {
         if let Some((_, entry)) = existing.as_ref()
             && entry.is_dir
         {
+            crate::serial_println!("[fat32] refusing to overwrite directory '{}'", path);
             return None;
         }
 
