@@ -80,6 +80,10 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     // Initialise VFS
     rustos::vfs::init();
 
+    // Enable the heap-backed terminal scrollback buffer now that the allocator
+    // is ready.  Arrow Up/Down will scroll through terminal history.
+    rustos::drivers::framebuffer::enable_scrollback();
+
     // Install embedded tcp-ip management ELF binaries (/bin/wifi etc.).
     // This must happen after VFS init and heap init.
     rustos::net_bins::install();
@@ -152,15 +156,26 @@ fn launch_rsh() -> ! {
 
     loop {
         // Wait for keyboard input
-        if let Some(byte) = rustos::task::keyboard::read_input_byte() {
-            shell.handle_char(byte as char);
-        } else if rustos::task::keyboard::interrupt_input_observed() {
-            x86_64::instructions::hlt();
-        } else {
-            // Before seeing any IRQ1 traffic, do not halt: some real laptops
-            // expose PS/2-compatible keyboard data only through polling after
-            // UEFI handoff. Once an IRQ arrives, the branch above can halt.
-            core::hint::spin_loop();
+        match rustos::task::keyboard::read_input_event() {
+            Some(rustos::task::keyboard::InputEvent::Char(byte)) => {
+                shell.handle_char(byte as char);
+            }
+            Some(rustos::task::keyboard::InputEvent::ArrowUp) => {
+                rustos::drivers::framebuffer::scroll_view_up();
+            }
+            Some(rustos::task::keyboard::InputEvent::ArrowDown) => {
+                rustos::drivers::framebuffer::scroll_view_down();
+            }
+            None => {
+                if rustos::task::keyboard::interrupt_input_observed() {
+                    x86_64::instructions::hlt();
+                } else {
+                    // Before seeing any IRQ1 traffic, do not halt: some real laptops
+                    // expose PS/2-compatible keyboard data only through polling after
+                    // UEFI handoff. Once an IRQ arrives, the branch above can halt.
+                    core::hint::spin_loop();
+                }
+            }
         }
     }
 }

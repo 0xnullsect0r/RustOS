@@ -113,27 +113,45 @@ pub async fn print_keypresses() {
 }
 
 pub fn read_input_byte() -> Option<u8> {
+    read_input_event().and_then(|e| match e {
+        InputEvent::Char(b) => Some(b),
+        _ => None,
+    })
+}
+
+/// An input event decoded from the PS/2 keyboard.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InputEvent {
+    /// A printable ASCII character or a control byte (e.g. `0x08` for Backspace).
+    Char(u8),
+    /// The Up arrow key was pressed.
+    ArrowUp,
+    /// The Down arrow key was pressed.
+    ArrowDown,
+}
+
+/// Returns the next available input event, or `None` if the queue is empty.
+pub fn read_input_event() -> Option<InputEvent> {
     let queue = SCANCODE_QUEUE.try_get().ok()?;
-    // Prefer interrupt-delivered scancodes. The direct PS/2 poll is a
-    // real-hardware fallback for laptops whose firmware exposes i8042 keyboard
-    // data but does not route IRQ1 through the legacy PIC after UEFI handoff.
     let scancode = queue.pop().or_else(poll_ps2_scancode)?;
-    decode_scancode(scancode)
+    decode_event(scancode)
 }
 
-pub fn interrupt_input_observed() -> bool {
-    KEYBOARD_IRQ_SEEN.load(Ordering::Relaxed)
-}
-
-fn decode_scancode(scancode: u8) -> Option<u8> {
+fn decode_event(scancode: u8) -> Option<InputEvent> {
     let mut keyboard = KEYBOARD_DECODER.lock();
     let key_event = keyboard.add_byte(scancode).ok()??;
     let key = keyboard.process_keyevent(key_event)?;
     match key {
-        DecodedKey::Unicode(c) if c.is_ascii() => Some(c as u8),
-        DecodedKey::RawKey(KeyCode::Backspace) => Some(0x08),
+        DecodedKey::Unicode(c) if c.is_ascii() => Some(InputEvent::Char(c as u8)),
+        DecodedKey::RawKey(KeyCode::Backspace) => Some(InputEvent::Char(0x08)),
+        DecodedKey::RawKey(KeyCode::ArrowUp) => Some(InputEvent::ArrowUp),
+        DecodedKey::RawKey(KeyCode::ArrowDown) => Some(InputEvent::ArrowDown),
         _ => None,
     }
+}
+
+pub fn interrupt_input_observed() -> bool {
+    KEYBOARD_IRQ_SEEN.load(Ordering::Relaxed)
 }
 
 fn poll_ps2_scancode() -> Option<u8> {

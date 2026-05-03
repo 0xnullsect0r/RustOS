@@ -3,7 +3,7 @@ use crate::vfs::{NodeType, VFS};
 const VIRTUAL_BIN_COMMANDS: &[&str] = &[
     "help", "echo", "clear", "uname", "color", "pwd", "ls", "cd", "mkdir", "rm", "cat", "write",
     "cp", "mv", "meminfo", "mount", "exec", "usbscan", "reboot", "shutdown", "rsh", "net", "lspci",
-    "lsusb", "lsblk", "grep", "ps",
+    "lsusb", "lsblk", "grep", "ps", "wifi", "ping", "ifconfig", "netstat",
 ];
 
 pub fn virtual_bin_commands() -> &'static [&'static str] {
@@ -91,6 +91,22 @@ pub fn run_virtual_bin_command(path: &str) -> Option<i64> {
         }
         "ps" => {
             crate::shell::commands::cmd_ps(&[]);
+            0
+        }
+        "wifi" => {
+            crate::shell::commands::cmd_wifi(&[]);
+            0
+        }
+        "ping" => {
+            crate::println!("Usage: ping <host>");
+            2
+        }
+        "ifconfig" => {
+            crate::shell::commands::cmd_ifconfig(&[]);
+            0
+        }
+        "netstat" => {
+            crate::shell::commands::cmd_netstat(&[]);
             0
         }
         "grep" => {

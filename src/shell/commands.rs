@@ -33,6 +33,10 @@ pub fn dispatch(shell: &mut Shell, cmd: &str, args: &[&str]) {
         "lsblk" => cmd_lsblk(),
         "grep" => cmd_grep(shell, args),
         "ps" => cmd_ps(args),
+        "wifi" => cmd_wifi(args),
+        "ping" => cmd_ping(args),
+        "ifconfig" => cmd_ifconfig(args),
+        "netstat" => cmd_netstat(args),
         other => crate::println!("unknown command: '{}'. Type 'help' for a list.", other),
     }
 }
@@ -65,6 +69,10 @@ pub fn print_help() {
     crate::println!("  lsblk             - List block devices");
     crate::println!("  grep <pat> <file> - Search file for lines matching pattern");
     crate::println!("  ps [aux]          - List running processes");
+    crate::println!("  wifi [status|scan|connect] - WiFi control");
+    crate::println!("  ping <host>       - Test network connectivity");
+    crate::println!("  ifconfig          - Show network interface configuration");
+    crate::println!("  netstat           - Show active network connections");
     crate::println!();
     crate::println!("/bin commands:");
     for cmd in crate::bin_commands::virtual_bin_commands() {
@@ -561,4 +569,87 @@ pub fn cmd_ps(_args: &[&str]) {
     if exec_rsp != 0 {
         crate::println!("  1  R    [exec]");
     }
+}
+
+// ---------------------------------------------------------------------------
+// wifi
+// ---------------------------------------------------------------------------
+
+pub fn cmd_wifi(args: &[&str]) {
+    match args.first().copied().unwrap_or("status") {
+        "status" | "" => {
+            crate::println!("WiFi status:");
+            crate::net::print_status();
+        }
+        "scan" => {
+            crate::println!("Scanning for wireless networks...");
+            crate::println!("(No 802.11 hardware found or driver not ready)");
+        }
+        "connect" => {
+            if args.len() < 2 {
+                crate::println!("Usage: wifi connect <ssid> [password]");
+            } else {
+                crate::println!("Connecting to '{}'...", args[1]);
+                crate::println!("Error: WiFi hardware not initialised");
+            }
+        }
+        "disconnect" => {
+            crate::println!("Not connected.");
+        }
+        "help" | "--help" | "-h" => {
+            crate::println!("Usage: wifi [status|scan|connect <ssid>|disconnect|help]");
+            crate::println!("  status      Show WiFi adapter and connection status (default)");
+            crate::println!("  scan        Scan for nearby wireless networks");
+            crate::println!("  connect     Associate with an SSID");
+            crate::println!("  disconnect  Disconnect from current network");
+        }
+        other => {
+            crate::println!("wifi: unknown subcommand '{}'. Try 'wifi help'.", other);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ping
+// ---------------------------------------------------------------------------
+
+pub fn cmd_ping(args: &[&str]) {
+    let host = match args.first().copied() {
+        Some(h) if !h.is_empty() => h,
+        _ => {
+            crate::println!("Usage: ping <host>");
+            return;
+        }
+    };
+    crate::println!("PING {} (network not yet available)", host);
+    crate::println!("Note: A live TCP/IP stack requires initialised WiFi hardware.");
+    crate::println!("      Use 'net' to view current network state.");
+}
+
+// ---------------------------------------------------------------------------
+// ifconfig
+// ---------------------------------------------------------------------------
+
+pub fn cmd_ifconfig(_args: &[&str]) {
+    crate::println!("lo        Link encap:Local Loopback");
+    crate::println!("          inet addr:127.0.0.1  Mask:255.0.0.0");
+    crate::println!("          UP LOOPBACK RUNNING  MTU:65536  Metric:1");
+    crate::println!();
+    crate::println!("wlan0     Link encap:Ethernet (802.11)");
+    crate::println!("          Status: DOWN");
+    crate::println!();
+    crate::net::print_status();
+}
+
+// ---------------------------------------------------------------------------
+// netstat
+// ---------------------------------------------------------------------------
+
+pub fn cmd_netstat(_args: &[&str]) {
+    crate::println!("Active Internet connections");
+    crate::println!("Proto  Local Address          Foreign Address        State");
+    crate::println!("(no active connections)");
+    crate::println!();
+    crate::println!("Active UNIX domain sockets");
+    crate::println!("(none)");
 }
