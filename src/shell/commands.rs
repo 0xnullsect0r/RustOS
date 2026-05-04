@@ -14,7 +14,22 @@ use alloc::{string::{String, ToString}, vec::Vec};
 
 /// Dispatch a parsed command name and argument list to the appropriate handler.
 pub fn dispatch(shell: &mut Shell, cmd: &str, args: &[&str]) {
-    match cmd {
+    // Handle /bin/<cmd> format for direct binary invocation
+    let resolved = shell.resolve_path(cmd);
+    let actual_cmd = if let Some(cmd_name) = crate::bin_commands::is_virtual_bin_path(&resolved) {
+        cmd_name
+    } else if cmd.starts_with("/bin/") {
+        // Could be a real external ELF binary - pass all args including the path
+        let mut exec_args = alloc::vec::Vec::with_capacity(args.len() + 1);
+        exec_args.push(cmd);
+        exec_args.extend_from_slice(args);
+        cmd_exec(shell, &exec_args);
+        return;
+    } else {
+        cmd
+    };
+
+    match actual_cmd {
         "help" => print_help(),
         "echo" => cmd_echo(args),
         "clear" => cmd_clear(),
