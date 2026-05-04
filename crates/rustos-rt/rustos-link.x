@@ -1,7 +1,8 @@
-/* rustos-link.x  —  Linker script for RustOS userspace programs
+/* rustos-link.x — Linker script for RustOS userspace programs
  *
- * Load address: 0x0040_0000 (4 MiB) — well above the kernel's identity-mapped area.
- * The ELF process loader in RustOS maps PT_LOAD segments to their virtual addresses.
+ * Load address: 0x0040_0000 (4 MiB) — well above the kernel's identity-mapped
+ * region.  The ELF process loader in RustOS maps PT_LOAD segments to their
+ * virtual addresses.
  */
 
 ENTRY(_start)

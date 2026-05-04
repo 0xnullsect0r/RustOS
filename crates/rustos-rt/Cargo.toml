@@ -2,12 +2,18 @@
 name = "rustos-rt"
 version = "0.1.0"
 edition = "2021"
-description = "Rust userspace runtime for RustOS — provides _start, syscall wrappers, and the rustos target spec"
+description = "Rust userspace runtime for RustOS — provides _start, syscall wrappers, print!/println! macros, and the rustos target spec"
 license = "MIT OR Apache-2.0"
 
 [lib]
 name = "rustos_rt"
-crate-type = ["staticlib"]
+# rlib lets downstream crates declare `rustos-rt` as a normal [dependency].
+# (The previous staticlib prevented this — which is why rsh and tcp-ip
+# vendored the runtime directly into their own source trees.)
+crate-type = ["rlib"]
 
 [features]
 default = []
+# Enables network syscall constants and wrappers (SYS_WIFI_*, SYS_NET_*).
+# Required by the tcp-ip crate.
+net = []
