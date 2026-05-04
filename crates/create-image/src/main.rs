@@ -1,4 +1,9 @@
-use std::{env, fs, io::{Seek, SeekFrom, Write, Read}, path::PathBuf, process};
+use std::{
+    env, fs,
+    io::{Seek, SeekFrom, Write},
+    path::PathBuf,
+    process,
+};
 use gpt::GptConfig;
 
 const FAT32_PARTITION_SIZE: u64 = 512 * 1024 * 1024; // 512 MB
@@ -75,17 +80,37 @@ fn add_fat32_partition(img_path: &PathBuf) -> std::io::Result<()> {
         .open(img_path)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("GPT error on initial open: {}", e)))?;
 
-    // Calculate partition location
-    let part_start_sector = (current_size / SECTOR_SIZE) as u64;
-    let total_sectors = (new_size / SECTOR_SIZE) as u64;
-    let part_end_sector = total_sectors - 34 - 1; // Leave room for backup GPT
-    
-    eprintln!("[create-image] Disk: {} sectors total", total_sectors);
-    eprintln!("[create-image] Partition 2: sectors {} to {}", part_start_sector, part_end_sector);
+    let existing_partitions = disk.partitions().clone();
+    disk.update_partitions(existing_partitions).map_err(|e| {
+        std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Failed to refresh GPT headers after resize: {}", e),
+        )
+    })?;
 
     let partition = gpt::partition_types::LINUX_FS;
-    disk.add_partition("rustos-storage", part_start_sector, partition, part_end_sector, None)
+    let partition_id = disk
+        .add_partition("rustos-storage", FAT32_PARTITION_SIZE, partition, 0, None)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to add partition: {}", e)))?;
+
+    let part = disk
+        .partitions()
+        .get(&partition_id)
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to locate newly created partition {}", partition_id),
+            )
+        })?;
+    let part_start_sector = part.first_lba;
+    let part_end_sector = part.last_lba;
+    let total_sectors = new_size / SECTOR_SIZE;
+
+    eprintln!("[create-image] Disk: {} sectors total", total_sectors);
+    eprintln!(
+        "[create-image] Partition 2: sectors {} to {}",
+        part_start_sector, part_end_sector
+    );
 
     disk.write()
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to write GPT: {}", e)))?;
@@ -129,18 +154,18 @@ fn add_fat32_partition(img_path: &PathBuf) -> std::io::Result<()> {
     bpb[26] = 0xFF;
     
     // Total sectors for this partition
-    let total_part_sectors = (part_end_sector - part_start_sector + 1);
-    bpb[32] = ((total_part_sectors & 0xFF) as u8);
-    bpb[33] = (((total_part_sectors >> 8) & 0xFF) as u8);
-    bpb[34] = (((total_part_sectors >> 16) & 0xFF) as u8);
-    bpb[35] = (((total_part_sectors >> 24) & 0xFF) as u8);
+    let total_part_sectors = part_end_sector - part_start_sector + 1;
+    bpb[32] = (total_part_sectors & 0xFF) as u8;
+    bpb[33] = ((total_part_sectors >> 8) & 0xFF) as u8;
+    bpb[34] = ((total_part_sectors >> 16) & 0xFF) as u8;
+    bpb[35] = ((total_part_sectors >> 24) & 0xFF) as u8;
     
     // FAT size in sectors
     let fat_size = 0x1000u32;
-    bpb[36] = ((fat_size & 0xFF) as u8);
-    bpb[37] = (((fat_size >> 8) & 0xFF) as u8);
-    bpb[38] = (((fat_size >> 16) & 0xFF) as u8);
-    bpb[39] = (((fat_size >> 24) & 0xFF) as u8);
+    bpb[36] = (fat_size & 0xFF) as u8;
+    bpb[37] = ((fat_size >> 8) & 0xFF) as u8;
+    bpb[38] = ((fat_size >> 16) & 0xFF) as u8;
+    bpb[39] = ((fat_size >> 24) & 0xFF) as u8;
     
     // Root cluster = 2
     bpb[44] = 2;
@@ -157,7 +182,5 @@ fn add_fat32_partition(img_path: &PathBuf) -> std::io::Result<()> {
 
     Ok(())
 }
-
-
 
 

@@ -28,6 +28,14 @@ reload_partition_table() {
     fi
 }
 
+run_as_root() {
+    if command -v sudo &>/dev/null && [[ "$(id -u)" -ne 0 ]]; then
+        sudo "$@"
+    else
+        "$@"
+    fi
+}
+
 # ---------------------------------------------------------------------------
 # Argument parsing
 # ---------------------------------------------------------------------------
@@ -166,35 +174,34 @@ if [[ "$PTTYPE" == "gpt" ]]; then
     fi
 
     echo "Repairing GPT metadata to use full target drive size..."
-    if command -v sudo &>/dev/null && [[ "$(id -u)" -ne 0 ]]; then
-        sudo sgdisk -e "$DRIVE"
-    else
-        sgdisk -e "$DRIVE"
-    fi
+    run_as_root sgdisk -e "$DRIVE"
     reload_partition_table "$DRIVE"
 
     # Give the kernel a brief moment to expose the updated GPT layout.
     sleep "$PARTITION_SYNC_DELAY_SECONDS"
 
-    # Use sgdisk to add the new partition for GPT disks
-    # -n 2:0:0 means: partition 2, start at next available sector, use all remaining space
-    # -t 2:0700 sets the partition type to "Microsoft basic data" (suitable for FAT32)
-    # -c 2:"rustos-storage" sets the partition name
-    echo "Adding storage partition using sgdisk..."
-    if command -v sudo &>/dev/null && [[ "$(id -u)" -ne 0 ]]; then
-        sudo sgdisk -n 2:0:0 -t 2:0700 -c 2:"rustos-storage" "$DRIVE"
+    if run_as_root sgdisk -i 2 "$DRIVE" >/dev/null 2>&1; then
+        STORAGE_START_SECTOR=$(
+            run_as_root sgdisk -i 2 "$DRIVE" |
+                awk -F: '/First sector:/ {gsub(/^[[:space:]]+/, "", $2); split($2, a, " "); print a[1]}'
+        )
+        if [[ -z "$STORAGE_START_SECTOR" ]]; then
+            echo "Error: failed to determine the start sector for existing GPT partition 2." >&2
+            exit 1
+        fi
+
+        echo "Resizing existing storage partition 2 to fill remaining space..."
+        run_as_root sgdisk -d 2 "$DRIVE"
+        run_as_root sgdisk -n 2:${STORAGE_START_SECTOR}:0 -t 2:0700 -c 2:"rustos-storage" "$DRIVE"
     else
-        sgdisk -n 2:0:0 -t 2:0700 -c 2:"rustos-storage" "$DRIVE"
+        echo "Adding storage partition using sgdisk..."
+        run_as_root sgdisk -n 2:0:0 -t 2:0700 -c 2:"rustos-storage" "$DRIVE"
     fi
     reload_partition_table "$DRIVE"
 else
     # For MBR/DOS partition tables, use sfdisk
     PART_SPEC='type=c'
-    if command -v sudo &>/dev/null && [[ "$(id -u)" -ne 0 ]]; then
-        printf '%s\n' "$PART_SPEC" | sudo sfdisk --append "$DRIVE"
-    else
-        printf '%s\n' "$PART_SPEC" | sfdisk --append "$DRIVE"
-    fi
+    printf '%s\n' "$PART_SPEC" | run_as_root sfdisk --append "$DRIVE"
     reload_partition_table "$DRIVE"
 fi
 
@@ -220,11 +227,7 @@ if [[ ! -b "$STORAGE_PART" ]]; then
 fi
 
 echo "Formatting ${STORAGE_PART} as FAT32 (label: RUSTOS_ROOT)..."
-if command -v sudo &>/dev/null && [[ "$(id -u)" -ne 0 ]]; then
-    sudo mkfs.fat -F 32 -n RUSTOS_ROOT "$STORAGE_PART"
-else
-    mkfs.fat -F 32 -n RUSTOS_ROOT "$STORAGE_PART"
-fi
+run_as_root mkfs.fat -F 32 -n RUSTOS_ROOT "$STORAGE_PART"
 
 # Populate the FAT32 root filesystem with a standard directory skeleton so
 # that the kernel has a proper persistent root from first boot.
