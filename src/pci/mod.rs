@@ -153,10 +153,9 @@ pub fn find_xhci(devices: &[PciDevice]) -> Option<&PciDevice> {
 
 /// Find an Intel AX210-family Wi-Fi adapter (vendor 0x8086).
 pub fn find_ax210(devices: &[PciDevice]) -> Option<&PciDevice> {
-    devices.iter().find(|d| {
-        d.vendor_id == 0x8086
-            && matches!(d.device_id, 0x2725 | 0x51F0 | 0x54F0 | 0x7F70)
-    })
+    devices
+        .iter()
+        .find(|d| d.vendor_id == 0x8086 && matches!(d.device_id, 0x2725 | 0x51F0 | 0x54F0 | 0x7F70))
 }
 
 /// Enable Bus Master + Memory Space in the PCI command register (offset 0x04).

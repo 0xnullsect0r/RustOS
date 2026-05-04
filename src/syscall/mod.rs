@@ -102,8 +102,7 @@ extern "C" fn dispatch(nr: u64, a1: u64, a2: u64, a3: u64) -> i64 {
             0
         }
         300..=310 => {
-            tcp_ip::kernel::dispatch_syscall(nr, a1, a2, a3)
-                .unwrap_or(-38) // -ENOSYS if unrecognised within tcp-ip
+            tcp_ip::kernel::dispatch_syscall(nr, a1, a2, a3).unwrap_or(-38) // -ENOSYS if unrecognised within tcp-ip
         }
         nr => {
             if let Some(ret) = crate::net::dispatch_syscall(nr, a1, a2, a3) {

@@ -37,9 +37,18 @@ fn main() {
     let release_dir = tcp_ip_dir.join("target/x86_64-unknown-rustos/release");
     let bin_names = ["wifi", "ping", "ifconfig", "netstat"];
     let all_exist = bin_names.iter().all(|n| release_dir.join(n).exists());
+    let running_under_clippy = std::env::var_os("CLIPPY_ARGS").is_some()
+        || std::env::var("RUSTC_WORKSPACE_WRAPPER")
+            .map(|wrapper| wrapper.contains("clippy-driver"))
+            .unwrap_or(false);
 
     let build_ok = all_exist
-        || {
+        || if running_under_clippy {
+            println!(
+                "cargo:warning=skipping tcp-ip ELF build under cargo clippy; existing /bin payloads will be reused if present"
+            );
+            false
+        } else {
             let status = Command::new("cargo")
                 .args(["build", "--release"])
                 .current_dir(&tcp_ip_dir)

@@ -488,9 +488,9 @@ impl Xhci {
 
             // EP0 Context (endpoint 0 = index 1 in device context array)
             let max_pkt: u32 = match speed {
-                3 => 64,       // High speed (USB 2.0)
-                4 | 5 => 512,  // SuperSpeed / SuperSpeedPlus (USB 3.x)
-                _ => 8,        // Full / Low speed
+                3 => 64,      // High speed (USB 2.0)
+                4 | 5 => 512, // SuperSpeed / SuperSpeedPlus (USB 3.x)
+                _ => 8,       // Full / Low speed
             };
             in_ctx.dev_ctx.ep[0].dword[1] = (3 << 3)        // EP type: control
                 | (max_pkt << 16) // MaxPacketSize
@@ -532,7 +532,11 @@ impl Xhci {
         {
             let raw_pkt = unsafe { (buf_virt as *const u8).add(7).read() } as u32;
             // For USB 3.x (SuperSpeed+), bMaxPacketSize0 is a base-2 exponent.
-            let max_pkt = if speed >= 4 { 1u32 << raw_pkt.min(10) } else { raw_pkt };
+            let max_pkt = if speed >= 4 {
+                1u32 << raw_pkt.min(10)
+            } else {
+                raw_pkt
+            };
             crate::serial_println!("[xhci] bMaxPacketSize0={} (raw={})", max_pkt, raw_pkt);
 
             // Update EP0 MaxPacketSize in device context
@@ -566,7 +570,7 @@ impl Xhci {
             let h = hdr_virt as *const u8;
             u16::from_le_bytes([h.add(2).read(), h.add(3).read()]) as usize
         };
-        let cfg_len = w_total.max(9).min(512);
+        let cfg_len = w_total.clamp(9, 512);
         let (cfg_virt, cfg_phys) = dma_alloc(cfg_len, 64);
         if self
             .control_in(&mut dev, 0x80, 6, 0x0200, 0, cfg_len as u16, cfg_phys)
@@ -939,7 +943,8 @@ impl Xhci {
         self.ring_doorbell(dev.slot_id, ep_out);
         let _ = self.wait_event(ty::TRANSFER_EVENT);
 
-        dev.bulk_in_ring.push(normal_trb(buf_phys, INQUIRY_LEN, true));
+        dev.bulk_in_ring
+            .push(normal_trb(buf_phys, INQUIRY_LEN, true));
         self.ring_doorbell(dev.slot_id, ep_in);
         let _ = self.wait_event(ty::TRANSFER_EVENT);
 

@@ -75,7 +75,7 @@ impl Shell {
         } else {
             path.to_string()
         };
-        
+
         if resolved_home.starts_with('/') {
             crate::vfs::RamFs::pub_normalize(&resolved_home)
         } else if resolved_home.is_empty() || resolved_home == "." {

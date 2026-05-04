@@ -6,7 +6,10 @@
 use super::Shell;
 use crate::drivers::vga::Color;
 use crate::vfs::{NodeType, VFS};
-use alloc::{string::{String, ToString}, vec::Vec};
+use alloc::{
+    string::{String, ToString},
+    vec::Vec,
+};
 
 // ---------------------------------------------------------------------------
 // Dispatcher
@@ -511,10 +514,7 @@ fn cmd_mkdir(shell: &mut Shell, args: &[&str]) {
             match result {
                 Some(Ok(())) => {}
                 Some(Err(crate::vfs::VfsError::AlreadyExists)) => {
-                    crate::println!(
-                        "mkdir: cannot create directory '{}': File exists",
-                        input
-                    );
+                    crate::println!("mkdir: cannot create directory '{}': File exists", input);
                 }
                 Some(Err(e)) => {
                     crate::println!("mkdir: cannot create directory '{}': {}", input, e)
@@ -602,10 +602,7 @@ fn rm_path(path: &str, display: &str, recursive: bool, force: bool) {
 
     if is_dir && !recursive {
         if !force {
-            crate::println!(
-                "rm: cannot remove '{}': Is a directory",
-                display
-            );
+            crate::println!("rm: cannot remove '{}': Is a directory", display);
         }
         return;
     }
@@ -837,7 +834,10 @@ fn cp_dir(src: &str, dst: &str) {
         match child.node_type {
             NodeType::Directory => cp_dir(&src_child, &dst_child),
             NodeType::File => {
-                let _ = VFS.lock().as_mut().map(|vfs| vfs.copy(&src_child, &dst_child));
+                let _ = VFS
+                    .lock()
+                    .as_mut()
+                    .map(|vfs| vfs.copy(&src_child, &dst_child));
             }
         }
     }
@@ -1007,8 +1007,16 @@ fn show_mounts() {
             // Format: device on mountpoint type fstype (options)
             crate::println!(
                 "{} on / type {} (rw,relatime)",
-                if vfs.root_name().contains("fat32") { "RUSTOS_ROOT" } else { "ramfs" },
-                if vfs.root_name().contains("fat32") { "vfat" } else { "ramfs" },
+                if vfs.root_name().contains("fat32") {
+                    "RUSTOS_ROOT"
+                } else {
+                    "ramfs"
+                },
+                if vfs.root_name().contains("fat32") {
+                    "vfat"
+                } else {
+                    "ramfs"
+                },
             );
             for mp in vfs.list_mounts() {
                 crate::println!("block on {} type vfat (rw,relatime)", mp);
@@ -1047,13 +1055,12 @@ fn mount_block_device(source: &str, target: &str) {
         }
 
         // Match partition (sda1, sda2, …)
-        if let Some(part_num_str) = source.strip_prefix(&dev_name) {
-            if let Ok(part_num) = part_num_str.parse::<usize>() {
-                if part_num >= 1 {
-                    try_mount_usb_partition(dev_idx, part_num - 1, block_size, target, source);
-                    return;
-                }
-            }
+        if let Some(part_num_str) = source.strip_prefix(&dev_name)
+            && let Ok(part_num) = part_num_str.parse::<usize>()
+            && part_num >= 1
+        {
+            try_mount_usb_partition(dev_idx, part_num - 1, block_size, target, source);
+            return;
         }
         let _ = block_count;
     }
@@ -1064,10 +1071,15 @@ fn mount_block_device(source: &str, target: &str) {
 
 fn try_mount_usb_whole(dev_idx: usize, target: &str) {
     use crate::usb::XhciBlockDevice;
-    if let Some(fat32) = crate::fs::fat32::Fat32Fs::new(alloc::boxed::Box::new(XhciBlockDevice { dev_idx })) {
+    if let Some(fat32) =
+        crate::fs::fat32::Fat32Fs::new(alloc::boxed::Box::new(XhciBlockDevice { dev_idx }))
+    {
         let mut vfs = VFS.lock();
         if let Some(vfs) = vfs.as_mut() {
-            vfs.mount(target, alloc::boxed::Box::new(crate::vfs::Fat32Mount(fat32)));
+            vfs.mount(
+                target,
+                alloc::boxed::Box::new(crate::vfs::Fat32Mount(fat32)),
+            );
             crate::println!("mounted on {}", target);
         }
     } else {
@@ -1075,8 +1087,14 @@ fn try_mount_usb_whole(dev_idx: usize, target: &str) {
     }
 }
 
-fn try_mount_usb_partition(dev_idx: usize, part_idx: usize, _block_size: u32, target: &str, source: &str) {
-    use crate::usb::{XhciBlockDevice, PartitionBlockDevice};
+fn try_mount_usb_partition(
+    dev_idx: usize,
+    part_idx: usize,
+    _block_size: u32,
+    target: &str,
+    source: &str,
+) {
+    use crate::usb::{PartitionBlockDevice, XhciBlockDevice};
 
     let partitions = crate::usb::gpt_partitions_for_device_pub(dev_idx);
 
@@ -1090,12 +1108,18 @@ fn try_mount_usb_partition(dev_idx: usize, part_idx: usize, _block_size: u32, ta
         if let Some(fat32) = crate::fs::fat32::Fat32Fs::new(block_dev) {
             let mut vfs = VFS.lock();
             if let Some(vfs) = vfs.as_mut() {
-                vfs.mount(target, alloc::boxed::Box::new(crate::vfs::Fat32Mount(fat32)));
+                vfs.mount(
+                    target,
+                    alloc::boxed::Box::new(crate::vfs::Fat32Mount(fat32)),
+                );
                 crate::println!("mounted on {}", target);
                 return;
             }
         }
-        crate::println!("mount: {}: no supported filesystem (only FAT32 is currently supported)", source);
+        crate::println!(
+            "mount: {}: no supported filesystem (only FAT32 is currently supported)",
+            source
+        );
     } else {
         crate::println!("mount: {}: partition not found", source);
     }
@@ -1106,7 +1130,11 @@ fn try_mount_usb_partition(dev_idx: usize, part_idx: usize, _block_size: u32, ta
 // ---------------------------------------------------------------------------
 
 fn cmd_umount(shell: &mut Shell, args: &[&str]) {
-    let paths: Vec<&str> = args.iter().filter(|a| !a.starts_with('-')).copied().collect();
+    let paths: Vec<&str> = args
+        .iter()
+        .filter(|a| !a.starts_with('-'))
+        .copied()
+        .collect();
     if paths.is_empty() {
         crate::println!("umount: no target specified");
         return;
@@ -1260,12 +1288,9 @@ fn pci_class_name(class: u8, subclass: u8, prog_if: u8) -> &'static str {
 
 pub fn cmd_lspci(args: &[&str]) {
     let verbose = args.iter().any(|&a| a == "-v" || a == "-vv" || a == "-vvv");
-    let numeric = args.iter().any(|&a| a == "-n");
-    let numeric_name = args.iter().any(|&a| a == "-nn");
-    let slot_filter: Option<&str> = args
-        .windows(2)
-        .find(|w| w[0] == "-s")
-        .map(|w| w[1]);
+    let numeric = args.contains(&"-n");
+    let numeric_name = args.contains(&"-nn");
+    let slot_filter: Option<&str> = args.windows(2).find(|w| w[0] == "-s").map(|w| w[1]);
 
     let devices = crate::pci::enumerate();
     if devices.is_empty() {
@@ -1274,19 +1299,14 @@ pub fn cmd_lspci(args: &[&str]) {
 
     for d in &devices {
         let slot = alloc::format!("{:02x}:{:02x}.{}", d.bus, d.dev, d.func);
-        if let Some(filter) = slot_filter {
-            if !slot.starts_with(filter) {
-                continue;
-            }
+        if let Some(filter) = slot_filter
+            && !slot.starts_with(filter)
+        {
+            continue;
         }
 
         if numeric {
-            crate::println!(
-                "{} {:04x}:{:04x}",
-                slot,
-                d.vendor_id,
-                d.device_id,
-            );
+            crate::println!("{} {:04x}:{:04x}", slot, d.vendor_id, d.device_id,);
         } else if numeric_name {
             crate::println!(
                 "{} {} [{}] [{:04x}:{:04x}]",
@@ -1329,8 +1349,8 @@ pub fn cmd_lspci(args: &[&str]) {
 // ---------------------------------------------------------------------------
 
 pub fn cmd_lsusb(args: &[&str]) {
-    let verbose = args.iter().any(|&a| a == "-v");
-    let tree = args.iter().any(|&a| a == "-t");
+    let verbose = args.contains(&"-v");
+    let tree = args.contains(&"-t");
 
     // Trigger a rescan so a recently-plugged USB drive shows up
     {
@@ -1348,10 +1368,11 @@ pub fn cmd_lsusb(args: &[&str]) {
         }
         Some(ctrl) => {
             if tree {
-                crate::println!("/:  Bus 001.Port 001: Dev 001, Class=root_hub, Driver=xhci_hcd/1p, 480M");
+                crate::println!(
+                    "/:  Bus 001.Port 001: Dev 001, Class=root_hub, Driver=xhci_hcd/1p, 480M"
+                );
                 for (i, dev) in ctrl.devices.iter().enumerate() {
-                    let size_mb =
-                        dev.block_count * dev.block_size as u64 / (1024 * 1024);
+                    let size_mb = dev.block_count * dev.block_size as u64 / (1024 * 1024);
                     crate::println!(
                         "    |__ Port {:03}: Dev {:03}, Class=Mass Storage, Driver=usb-storage, {}",
                         i + 1,
@@ -1368,11 +1389,15 @@ pub fn cmd_lsusb(args: &[&str]) {
 
             if ctrl.devices.is_empty() {
                 // Print the root hub only (like real lsusb)
-                crate::println!("Bus 001 Device 001: ID 8086:0000 Intel Corporation xHCI Host Controller");
+                crate::println!(
+                    "Bus 001 Device 001: ID 8086:0000 Intel Corporation xHCI Host Controller"
+                );
                 return;
             }
 
-            crate::println!("Bus 001 Device 001: ID 8086:0000 Intel Corporation xHCI Host Controller");
+            crate::println!(
+                "Bus 001 Device 001: ID 8086:0000 Intel Corporation xHCI Host Controller"
+            );
             for (i, dev) in ctrl.devices.iter().enumerate() {
                 let size_mb = dev.block_count * dev.block_size as u64 / (1024 * 1024);
                 crate::println!(
@@ -1380,9 +1405,7 @@ pub fn cmd_lsusb(args: &[&str]) {
                     i + 2,
                 );
                 if verbose {
-                    crate::println!(
-                        "  bDeviceClass        8 (Mass Storage)",
-                    );
+                    crate::println!("  bDeviceClass        8 (Mass Storage)",);
                     crate::println!("  bDeviceSubClass     6 (SCSI)");
                     crate::println!("  bDeviceProtocol    80 (Bulk-Only)");
                     crate::println!(
@@ -1403,10 +1426,10 @@ pub fn cmd_lsusb(args: &[&str]) {
 
 pub fn cmd_lsblk(args: &[&str]) {
     // Flags
-    let fs_info = args.iter().any(|&a| a == "-f");
-    let list_fmt = args.iter().any(|&a| a == "-l");
-    let no_heading = args.iter().any(|&a| a == "-n");
-    let full_path = args.iter().any(|&a| a == "-p");
+    let fs_info = args.contains(&"-f");
+    let list_fmt = args.contains(&"-l");
+    let no_heading = args.contains(&"-n");
+    let full_path = args.contains(&"-p");
 
     // Custom output columns: -o NAME,SIZE,TYPE,...
     let custom_cols: Option<Vec<&str>> = args
@@ -1425,15 +1448,18 @@ pub fn cmd_lsblk(args: &[&str]) {
     let devs = crate::block::probe_block_devices();
 
     // Determine columns to show
-    let cols: Vec<&str> = custom_cols.as_deref().unwrap_or(if fs_info {
-        &["NAME", "FSTYPE", "SIZE", "RO", "TYPE", "MOUNTPOINT"][..]
-    } else {
-        &["NAME", "MAJ:MIN", "RM", "SIZE", "RO", "TYPE", "MOUNTPOINT"][..]
-    }).to_vec();
+    let cols: Vec<&str> = custom_cols
+        .as_deref()
+        .unwrap_or(if fs_info {
+            &["NAME", "FSTYPE", "SIZE", "RO", "TYPE", "MOUNTPOINT"][..]
+        } else {
+            &["NAME", "MAJ:MIN", "RM", "SIZE", "RO", "TYPE", "MOUNTPOINT"][..]
+        })
+        .to_vec();
 
     if !no_heading {
         // Print header
-        let header: Vec<&str> = cols.iter().map(|c| *c).collect();
+        let header = cols.to_vec();
         crate::println!("{}", header.join("   "));
     }
 
@@ -1449,7 +1475,11 @@ pub fn cmd_lsblk(args: &[&str]) {
         .unwrap_or(false);
 
     for bd in &devs {
-        if !device_filter.is_empty() && !device_filter.iter().any(|&f| bd.name == f || bd.name.starts_with(f)) {
+        if !device_filter.is_empty()
+            && !device_filter
+                .iter()
+                .any(|&f| bd.name == f || bd.name.starts_with(f))
+        {
             continue;
         }
 
@@ -1474,31 +1504,17 @@ pub fn cmd_lsblk(args: &[&str]) {
             crate::block::BusType::Usb => "disk",
         };
 
-        if list_fmt {
-            print_lsblk_row(
-                &dev_name,
-                &bd.name,
-                bd.size_bytes(),
-                type_str,
-                "",
-                disk_mountpoint,
-                false,
-                &cols,
-                &bd.model,
-            );
-        } else {
-            print_lsblk_row(
-                &dev_name,
-                &bd.name,
-                bd.size_bytes(),
-                type_str,
-                "",
-                disk_mountpoint,
-                false,
-                &cols,
-                &bd.model,
-            );
-        }
+        print_lsblk_row(
+            &dev_name,
+            &bd.name,
+            bd.size_bytes(),
+            type_str,
+            "",
+            disk_mountpoint,
+            false,
+            &cols,
+            &bd.model,
+        );
 
         // Print partitions
         for part in &bd.partitions {
@@ -1620,8 +1636,8 @@ fn cmd_grep(shell: &mut Shell, args: &[&str]) {
                     'l' | 'L' => list_files = true,
                     'r' | 'R' => recursive = true,
                     'E' | 'F' | 'P' => {} // treat patterns as literal substrings
-                    'H' => {}              // always print filename — we handle below
-                    'h' => {}              // suppress filename — handled implicitly
+                    'H' => {}             // always print filename — we handle below
+                    'h' => {}             // suppress filename — handled implicitly
                     _ => {}
                 }
             }
@@ -1667,48 +1683,35 @@ fn cmd_grep(shell: &mut Shell, args: &[&str]) {
     for &file_input in &files {
         let path = shell.resolve_path(file_input);
         if recursive {
-            grep_recursive(
-                shell,
-                &path,
-                file_input,
+            let opts = GrepOptions {
                 pat,
                 ignore_case,
                 line_numbers,
                 invert,
                 count_only,
                 list_files,
-            );
+            };
+            grep_recursive(&path, file_input, &opts);
         } else {
             grep_file(
                 &path,
                 file_input,
-                pat,
-                ignore_case,
-                line_numbers,
-                invert,
-                count_only,
-                list_files,
+                &GrepOptions {
+                    pat,
+                    ignore_case,
+                    line_numbers,
+                    invert,
+                    count_only,
+                    list_files,
+                },
                 multi_file,
             );
         }
     }
 }
 
-fn grep_file(
-    path: &str,
-    display: &str,
-    pat: &str,
-    ignore_case: bool,
-    line_numbers: bool,
-    invert: bool,
-    count_only: bool,
-    list_files: bool,
-    print_filename: bool,
-) {
-    let data = VFS
-        .lock()
-        .as_mut()
-        .and_then(|vfs| vfs.read_file(path).ok());
+fn grep_file(path: &str, display: &str, opts: &GrepOptions<'_>, print_filename: bool) {
+    let data = VFS.lock().as_mut().and_then(|vfs| vfs.read_file(path).ok());
     let data = match data {
         Some(d) => d,
         None => {
@@ -1724,33 +1727,33 @@ fn grep_file(
         }
     };
 
-    let pat_cmp = if ignore_case {
-        pat.to_lowercase()
+    let pat_cmp = if opts.ignore_case {
+        opts.pat.to_lowercase()
     } else {
-        pat.to_string()
+        opts.pat.to_string()
     };
 
     let mut count = 0usize;
     let mut matched = false;
 
     for (line_idx, line) in text.lines().enumerate() {
-        let line_cmp = if ignore_case {
+        let line_cmp = if opts.ignore_case {
             line.to_lowercase()
         } else {
             line.to_string()
         };
         let hits = line_cmp.contains(&pat_cmp);
-        let show = if invert { !hits } else { hits };
+        let show = if opts.invert { !hits } else { hits };
         if show {
             count += 1;
             matched = true;
-            if !count_only && !list_files {
+            if !opts.count_only && !opts.list_files {
                 let prefix = if print_filename {
                     alloc::format!("{}:", display)
                 } else {
                     String::new()
                 };
-                if line_numbers {
+                if opts.line_numbers {
                     crate::println!("{}{}:{}", prefix, line_idx + 1, line);
                 } else {
                     crate::println!("{}{}", prefix, line);
@@ -1759,28 +1762,18 @@ fn grep_file(
         }
     }
 
-    if count_only {
+    if opts.count_only {
         if print_filename {
             crate::println!("{}:{}", display, count);
         } else {
             crate::println!("{}", count);
         }
-    } else if list_files && matched {
+    } else if opts.list_files && matched {
         crate::println!("{}", display);
     }
 }
 
-fn grep_recursive(
-    shell: &mut Shell,
-    path: &str,
-    display: &str,
-    pat: &str,
-    ignore_case: bool,
-    line_numbers: bool,
-    invert: bool,
-    count_only: bool,
-    list_files: bool,
-) {
+fn grep_recursive(path: &str, display: &str, opts: &GrepOptions<'_>) {
     let is_dir = VFS
         .lock()
         .as_mut()
@@ -1799,22 +1792,10 @@ fn grep_recursive(
                 alloc::format!("{}/{}", path, child.name)
             };
             let child_display = alloc::format!("{}/{}", display, child.name);
-            grep_recursive(
-                shell,
-                &child_path,
-                &child_display,
-                pat,
-                ignore_case,
-                line_numbers,
-                invert,
-                count_only,
-                list_files,
-            );
+            grep_recursive(&child_path, &child_display, opts);
         }
     } else {
-        grep_file(
-            path, display, pat, ignore_case, line_numbers, invert, count_only, list_files, true,
-        );
+        grep_file(path, display, opts, true);
     }
 }
 
@@ -1830,9 +1811,10 @@ pub fn cmd_ps(args: &[&str]) {
 
     if full || aux {
         crate::println!("USER       PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND");
-        crate::println!("root         0  0.0  0.0      0     0 ?        S    00:00   0:00 [kernel]");
-        let exec_rsp =
-            crate::process::EXEC_LONGJMP_RSP.load(core::sync::atomic::Ordering::SeqCst);
+        crate::println!(
+            "root         0  0.0  0.0      0     0 ?        S    00:00   0:00 [kernel]"
+        );
+        let exec_rsp = crate::process::EXEC_LONGJMP_RSP.load(core::sync::atomic::Ordering::SeqCst);
         if exec_rsp != 0 {
             crate::println!(
                 "root         1  0.0  0.0      0     0 ?        R    00:00   0:00 [exec]"
@@ -1841,8 +1823,7 @@ pub fn cmd_ps(args: &[&str]) {
     } else {
         crate::println!("  PID TTY          TIME CMD");
         crate::println!("    0 ?        00:00:00 kernel");
-        let exec_rsp =
-            crate::process::EXEC_LONGJMP_RSP.load(core::sync::atomic::Ordering::SeqCst);
+        let exec_rsp = crate::process::EXEC_LONGJMP_RSP.load(core::sync::atomic::Ordering::SeqCst);
         if exec_rsp != 0 || all {
             crate::println!("    1 ?        00:00:00 exec");
         }
@@ -1885,11 +1866,14 @@ pub fn cmd_wifi(args: &[&str]) {
                         return;
                     }
                     for net in results.networks() {
-                        let ssid = core::str::from_utf8(net.ssid_str())
-                            .unwrap_or("<invalid UTF-8>");
+                        let ssid =
+                            core::str::from_utf8(net.ssid_str()).unwrap_or("<invalid UTF-8>");
                         crate::println!(
                             "  SSID: {:32}  Signal: {} dBm  Channel: {}  Security: {}",
-                            ssid, net.rssi, net.channel, net.security_label()
+                            ssid,
+                            net.rssi,
+                            net.channel,
+                            net.security_label()
                         );
                     }
                 }
@@ -1963,7 +1947,9 @@ pub fn cmd_wifi(args: &[&str]) {
         }
         "help" | "--help" | "-h" => {
             crate::println!("Usage: wifi [init|status|scan|connect <ssid>|disconnect|help]");
-            crate::println!("  init        Probe PCI, find the AX210, and initialize the WiFi driver");
+            crate::println!(
+                "  init        Probe PCI, find the AX210, and initialize the WiFi driver"
+            );
             crate::println!("  status      Show WiFi adapter and connection status (default)");
             crate::println!("  scan        Scan for nearby wireless networks");
             crate::println!("  connect     Associate with an SSID");
@@ -2019,4 +2005,12 @@ pub fn cmd_netstat(_args: &[&str]) {
     crate::println!();
     crate::println!("Active UNIX domain sockets (w/o servers)");
     crate::println!("Proto RefCnt Flags       Type       State         I-Node   Path");
+}
+struct GrepOptions<'a> {
+    pat: &'a str,
+    ignore_case: bool,
+    line_numbers: bool,
+    invert: bool,
+    count_only: bool,
+    list_files: bool,
 }

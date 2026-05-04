@@ -24,7 +24,7 @@ fn panic(info: &PanicInfo) -> ! {
 #[test_case]
 fn test_network_stack_initialization() {
     rustos::serial_println!("[test] Checking network stack initialization...");
-    
+
     let status = tcp_ip::kernel::status_str();
     assert!(
         status.is_some() || status.is_none(),
@@ -36,7 +36,7 @@ fn test_network_stack_initialization() {
 #[test_case]
 fn test_ax210_device_detection() {
     rustos::serial_println!("[test] Checking for Intel AX210 WiFi device...");
-    
+
     let status = tcp_ip::kernel::status_str();
     let _ = status;
 }
@@ -45,7 +45,7 @@ fn test_ax210_device_detection() {
 #[test_case]
 fn test_network_syscall_dispatch() {
     rustos::serial_println!("[test] Testing network syscall dispatch...");
-    
+
     let result = tcp_ip::kernel::dispatch_syscall(300, 999, 999, 999);
     let _ = result;
 }
@@ -54,7 +54,7 @@ fn test_network_syscall_dispatch() {
 #[test_case]
 fn test_socket_syscall_availability() {
     rustos::serial_println!("[test] Checking socket syscall (300) availability...");
-    
+
     let result = tcp_ip::kernel::dispatch_syscall(300, 2, 1, 6);
     let _ = result;
 }
@@ -63,9 +63,9 @@ fn test_socket_syscall_availability() {
 #[test_case]
 fn test_network_binary_paths() {
     rustos::serial_println!("[test] Checking network binary paths...");
-    
+
     let network_bins = ["ping", "ifconfig", "netstat", "wifi", "net"];
-    
+
     for cmd in network_bins.iter() {
         assert!(
             rustos::bin_commands::virtual_bin_commands().contains(cmd),
@@ -79,7 +79,7 @@ fn test_network_binary_paths() {
 #[test_case]
 fn test_tcp_ip_stack_active() {
     rustos::serial_println!("[test] Checking TCP/IP stack activity...");
-    
+
     let is_active = tcp_ip::kernel::is_active();
     if is_active {
         rustos::serial_println!("[test] TCP/IP stack is active");
@@ -92,7 +92,7 @@ fn test_tcp_ip_stack_active() {
 #[test_case]
 fn test_invalid_network_syscall() {
     rustos::serial_println!("[test] Testing invalid network syscall handling...");
-    
+
     let result = tcp_ip::kernel::dispatch_syscall(999, 0, 0, 0);
     let _ = result;
 }
@@ -101,10 +101,10 @@ fn test_invalid_network_syscall() {
 #[test_case]
 fn test_network_config_state() {
     rustos::serial_println!("[test] Testing network configuration state...");
-    
+
     let status1 = tcp_ip::kernel::status_str();
     let status2 = tcp_ip::kernel::status_str();
-    
+
     assert_eq!(
         status1, status2,
         "Network status should be consistent across queries"
@@ -115,7 +115,7 @@ fn test_network_config_state() {
 #[test_case]
 fn test_network_device_enumeration() {
     rustos::serial_println!("[test] Testing network device enumeration...");
-    
+
     let devices = rustos::pci::enumerate();
     let _ = devices;
 }

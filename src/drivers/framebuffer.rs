@@ -174,9 +174,9 @@ impl FrameBufferWriter {
                 Some(sb) => sb,
                 None => return,
             };
-            for i in first..last_excl {
+            for (i, line) in sb.iter().enumerate().take(last_excl).skip(first) {
                 if i < sb_len {
-                    display.push(sb[i].clone());
+                    display.push(line.clone());
                 } else {
                     // i == sb_len → the in-progress current_line
                     display.push(self.current_line.clone());

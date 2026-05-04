@@ -24,14 +24,13 @@ fn panic(info: &PanicInfo) -> ! {
 #[test_case]
 fn test_all_commands_registered() {
     let expected_commands = [
-        "help", "echo", "clear", "uname", "color", "pwd", "ls", "cd", "mkdir", "rm",
-        "cat", "write", "cp", "mv", "meminfo", "mount", "umount", "net", "exec", 
-        "usbscan", "reboot", "shutdown", "lspci", "lsusb", "lsblk", "grep", "ps", 
-        "wifi", "ping", "ifconfig", "netstat",
+        "help", "echo", "clear", "uname", "color", "pwd", "ls", "cd", "mkdir", "rm", "cat",
+        "write", "cp", "mv", "meminfo", "mount", "umount", "net", "exec", "usbscan", "reboot",
+        "shutdown", "lspci", "lsusb", "lsblk", "grep", "ps", "wifi", "ping", "ifconfig", "netstat",
     ];
-    
+
     let registered_cmds = rustos::bin_commands::virtual_bin_commands();
-    
+
     for cmd in expected_commands.iter() {
         assert!(
             registered_cmds.contains(cmd),
@@ -44,14 +43,8 @@ fn test_all_commands_registered() {
 /// Test that /bin/ virtual paths are recognized
 #[test_case]
 fn test_bin_virtual_paths() {
-    let test_paths = [
-        "/bin/echo",
-        "/bin/ls",
-        "/bin/cat",
-        "/bin/pwd",
-        "/bin/grep",
-    ];
-    
+    let test_paths = ["/bin/echo", "/bin/ls", "/bin/cat", "/bin/pwd", "/bin/grep"];
+
     for path in test_paths.iter() {
         let result = rustos::bin_commands::is_virtual_bin_path(path);
         assert!(
@@ -99,7 +92,7 @@ fn test_network_commands_available() {
         ("ifconfig", "/bin/ifconfig"),
         ("netstat", "/bin/netstat"),
     ];
-    
+
     for &(cmd, path) in net_commands.iter() {
         let result = rustos::bin_commands::is_virtual_bin_path(path);
         assert_eq!(
@@ -120,7 +113,7 @@ fn test_hardware_commands_available() {
         ("lsblk", "/bin/lsblk"),
         ("ps", "/bin/ps"),
     ];
-    
+
     for &(cmd, path) in hw_commands.iter() {
         let result = rustos::bin_commands::is_virtual_bin_path(path);
         assert_eq!(
@@ -137,14 +130,14 @@ fn test_hardware_commands_available() {
 fn test_file_command_vfs_integration() {
     let test_file = "/test_cmd.txt";
     let test_content = b"command test data";
-    
+
     {
         let mut vfs = rustos::vfs::VFS.lock();
         if let Some(vfs) = vfs.as_mut() {
             let _ = vfs.write_file(test_file, test_content);
         }
     }
-    
+
     {
         let mut vfs = rustos::vfs::VFS.lock();
         if let Some(vfs) = vfs.as_mut() {
@@ -160,21 +153,26 @@ fn test_command_path_parsing() {
         path: &'static str,
         should_match: bool,
     }
-    
+
     let test_cases = [
-        TestCase { path: "/bin/echo", should_match: true },
-        TestCase { path: "/bin/nonexistent", should_match: false },
-        TestCase { path: "/usr/bin/echo", should_match: false },
+        TestCase {
+            path: "/bin/echo",
+            should_match: true,
+        },
+        TestCase {
+            path: "/bin/nonexistent",
+            should_match: false,
+        },
+        TestCase {
+            path: "/usr/bin/echo",
+            should_match: false,
+        },
     ];
-    
+
     for test in test_cases.iter() {
         let result = rustos::bin_commands::is_virtual_bin_path(test.path);
         if test.should_match {
-            assert!(
-                result.is_some(),
-                "Path {} should match",
-                test.path
-            );
+            assert!(result.is_some(), "Path {} should match", test.path);
         }
     }
 }
@@ -184,14 +182,21 @@ fn test_command_path_parsing() {
 fn test_command_availability_consistency() {
     let cmds1 = rustos::bin_commands::virtual_bin_commands();
     let cmds2 = rustos::bin_commands::virtual_bin_commands();
-    
-    assert_eq!(cmds1.len(), cmds2.len(), "Command list should be consistent");
+
+    assert_eq!(
+        cmds1.len(),
+        cmds2.len(),
+        "Command list should be consistent"
+    );
 }
 
 /// Test that all commands have proper infrastructure
 #[test_case]
 fn test_command_infrastructure() {
     let cmds = rustos::bin_commands::virtual_bin_commands();
-    assert!(!cmds.is_empty(), "At least some commands should be registered");
+    assert!(
+        !cmds.is_empty(),
+        "At least some commands should be registered"
+    );
     assert!(cmds.len() > 20, "Should have multiple commands");
 }

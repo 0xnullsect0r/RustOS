@@ -118,7 +118,12 @@ fn r32(buf: &[u8], offset: usize) -> u32 {
     if offset + 4 > buf.len() {
         return 0;
     }
-    u32::from_le_bytes([buf[offset], buf[offset + 1], buf[offset + 2], buf[offset + 3]])
+    u32::from_le_bytes([
+        buf[offset],
+        buf[offset + 1],
+        buf[offset + 2],
+        buf[offset + 3],
+    ])
 }
 
 /// Read a little-endian u64 from a byte slice at `offset`.
@@ -140,7 +145,7 @@ fn r64(buf: &[u8], offset: usize) -> u64 {
 
 /// Read up to `len` bytes from physical address `phys` into a stack buffer.
 /// Returns a slice of the filled portion.
-fn read_phys<'a>(phys_off: u64, phys: u64, buf: &'a mut [u8]) -> &'a [u8] {
+fn read_phys(phys_off: u64, phys: u64, buf: &mut [u8]) -> &[u8] {
     let len = buf.len();
     unsafe {
         let src = phys_ptr(phys_off, phys);
@@ -172,7 +177,10 @@ fn find_rsdp(phys_off: u64) -> Option<Rsdp> {
     let ebda_base = (ebda_seg as u64) << 4;
 
     // Scan EBDA first 1 KiB, then BIOS ROM
-    for &(start, end) in &[(ebda_base, ebda_base + 1024), (0x000E_0000u64, 0x000F_FFFFu64)] {
+    for &(start, end) in &[
+        (ebda_base, ebda_base + 1024),
+        (0x000E_0000u64, 0x000F_FFFFu64),
+    ] {
         let mut addr = start;
         while addr + RSDP_V1_SIZE as u64 <= end {
             let mut buf = [0u8; RSDP_V2_SIZE];
@@ -322,4 +330,3 @@ fn spin_short() {
         unsafe { core::arch::asm!("pause", options(nostack, nomem, preserves_flags)) };
     }
 }
-

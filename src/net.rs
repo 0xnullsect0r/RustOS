@@ -24,7 +24,9 @@ fn init_state_message(state: WifiInitState) -> &'static str {
     match state {
         WifiInitState::Inactive => "wlan0: driver inactive (run 'wifi init')",
         WifiInitState::Active => "wlan0: driver active",
-        WifiInitState::NoAx210 => "wlan0: no AX210 adapter found (run 'lspci' to verify PCI detection)",
+        WifiInitState::NoAx210 => {
+            "wlan0: no AX210 adapter found (run 'lspci' to verify PCI detection)"
+        }
         WifiInitState::InvalidBar => "wlan0: AX210 BAR0 is zero or invalid",
         WifiInitState::DriverFailed(err) => match err {
             DriverError::DeviceNotFound => "wlan0: AX210 device not found during driver init",
@@ -65,7 +67,11 @@ pub fn init() -> Result<(), &'static str> {
 
     crate::serial_println!(
         "[net] found Intel AX210 at {:02x}:{:02x}.{:x} (PCI {:04x}:{:04x})",
-        dev.bus, dev.dev, dev.func, dev.vendor_id, dev.device_id
+        dev.bus,
+        dev.dev,
+        dev.func,
+        dev.vendor_id,
+        dev.device_id
     );
 
     // Enable Bus Master (bit 2) and Memory Space (bit 1) in PCI command register
@@ -86,7 +92,9 @@ pub fn init() -> Result<(), &'static str> {
     let bar0_virt = phys_offset + bar0_phys;
 
     crate::serial_println!(
-        "[net] AX210 BAR0 phys=0x{:x} virt=0x{:x}", bar0_phys, bar0_virt
+        "[net] AX210 BAR0 phys=0x{:x} virt=0x{:x}",
+        bar0_phys,
+        bar0_virt
     );
 
     // Initialize the tcp-ip driver

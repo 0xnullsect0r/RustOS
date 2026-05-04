@@ -15,7 +15,10 @@
 
 extern crate alloc;
 
-use alloc::{string::{String, ToString}, vec::Vec};
+use alloc::{
+    string::{String, ToString},
+    vec::Vec,
+};
 use x86_64::instructions::port::Port;
 
 use crate::memory::PHYS_MEM_OFFSET;
@@ -188,8 +191,8 @@ mod nvme {
     }
 
     use alloc::collections::BTreeMap;
-    use spin::Mutex;
     use lazy_static::lazy_static;
+    use spin::Mutex;
 
     lazy_static! {
         static ref NVME_CONTEXTS: Mutex<BTreeMap<u64, NvmeQueueContext>> =
@@ -275,12 +278,16 @@ mod nvme {
         let acq_phys_real = acq_phys - phys_off;
 
         // AQA: admin queue depth - 1
-        write32(base, AQA, ((Q_DEPTH as u32 - 1) << 16) | (Q_DEPTH as u32 - 1));
+        write32(
+            base,
+            AQA,
+            ((Q_DEPTH as u32 - 1) << 16) | (Q_DEPTH as u32 - 1),
+        );
         write64(base, ASQ, asq_phys_real);
         write64(base, ACQ, acq_phys_real);
 
         // CC: CSS=0 (NVM), IOSQES=6 (64B), IOCQES=4 (16B), MPS=0, EN=1
-        let new_cc: u32 = 1 | (0 << 4) | (0 << 7) | (6 << 16) | (4 << 20);
+        let new_cc: u32 = 1 | (6 << 16) | (4 << 20);
         write32(base, CC, new_cc);
 
         // Wait CSTS.RDY = 1
@@ -704,7 +711,11 @@ pub fn detect_fs(sector0: &[u8]) -> FsType {
                 // estimate cluster count
                 let total16 = read_u16_le(sector0, 19);
                 let total32 = read_u32_le(sector0, 32);
-                let total = if total16 != 0 { total16 as u32 } else { total32 };
+                let total = if total16 != 0 {
+                    total16 as u32
+                } else {
+                    total32
+                };
                 let data_start = rsvd as u32
                     + nfat as u32 * fat_sz16 as u32
                     + (root_ent as u32 * 32).div_ceil(bps as u32);
@@ -990,10 +1001,10 @@ fn parse_partitions<F: FnMut(u64) -> Option<Vec<u8>>>(
     dev_name: &str,
 ) -> Vec<Partition> {
     // Try GPT first
-    if let Some(parts) = parse_gpt_partitions(&mut read_fn, dev_name) {
-        if !parts.is_empty() {
-            return parts;
-        }
+    if let Some(parts) = parse_gpt_partitions(&mut read_fn, dev_name)
+        && !parts.is_empty()
+    {
+        return parts;
     }
     // Fallback to MBR
     parse_mbr_partitions(&mut read_fn, dev_name).unwrap_or_default()
@@ -1084,10 +1095,7 @@ pub fn probe_block_devices() -> Vec<BlockDev> {
                 };
                 // NVMe queue context is now kept alive by the probe function,
                 // so we can enumerate partitions
-                let parts = parse_partitions(
-                    |lba| nvme_read_sector(mmio_phys, lba),
-                    &dev_name,
-                );
+                let parts = parse_partitions(|lba| nvme_read_sector(mmio_phys, lba), &dev_name);
                 bd.partitions = parts;
                 devices.push(bd);
             } else {
@@ -1117,10 +1125,7 @@ pub fn probe_block_devices() -> Vec<BlockDev> {
                 };
                 let ap = abar_phys;
                 let pp = port_idx;
-                let parts = parse_partitions(
-                    |lba| ahci_read_sector(ap, pp, lba),
-                    &dev_name,
-                );
+                let parts = parse_partitions(|lba| ahci_read_sector(ap, pp, lba), &dev_name);
                 devices.push(BlockDev {
                     name: dev_name,
                     bus: BusType::Ahci,
