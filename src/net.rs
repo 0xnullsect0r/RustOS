@@ -58,9 +58,19 @@ fn init_state_message(state: WifiInitState) -> &'static str {
                 "wlan0: AX210 firmware delivered an ALIVE notification, but its runtime state was malformed or reported failure"
             }
             DriverError::HardwareFault => "wlan0: AX210 hardware reported a fault",
+            DriverError::CommandTimeout => {
+                "wlan0: AX210 firmware did not complete the runtime command in time"
+            }
             DriverError::BufferFull => "wlan0: AX210 driver buffer is full",
             DriverError::InvalidState => "wlan0: AX210 driver entered an invalid state",
             DriverError::BufferTooSmall => "wlan0: AX210 driver buffer is too small",
+            DriverError::AuthenticationFailed => {
+                "wlan0: AX210 firmware rejected 802.11 authentication"
+            }
+            DriverError::AssociationFailed => "wlan0: AX210 firmware rejected 802.11 association",
+            DriverError::DeauthenticationFailed => {
+                "wlan0: AX210 firmware rejected deauthentication"
+            }
             DriverError::Unsupported => {
                 "wlan0: AX210 runtime transport support is incomplete for that operation"
             }
