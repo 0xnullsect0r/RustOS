@@ -32,8 +32,8 @@ fn init_state_message(state: WifiInitState) -> &'static str {
             DriverError::DeviceNotFound => "wlan0: AX210 device not found during driver init",
             DriverError::InvalidBar => "wlan0: AX210 BAR is invalid or unusable",
             DriverError::FirmwareFault => "wlan0: AX210 firmware setup failed",
-            DriverError::NicReadyTimeout => {
-                "wlan0: AX210 timed out waiting for NIC_READY during initialization"
+            DriverError::HardwareReadyTimeout => {
+                "wlan0: AX210 timed out taking PCI/NIC ownership during initialization"
             }
             DriverError::MacClockTimeout => {
                 "wlan0: AX210 timed out waiting for the MAC clock during initialization"
