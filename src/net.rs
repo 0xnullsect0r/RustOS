@@ -32,7 +32,15 @@ fn init_state_message(state: WifiInitState) -> &'static str {
             DriverError::DeviceNotFound => "wlan0: AX210 device not found during driver init",
             DriverError::InvalidBar => "wlan0: AX210 BAR is invalid or unusable",
             DriverError::FirmwareFault => "wlan0: AX210 firmware setup failed",
-            DriverError::Timeout => "wlan0: AX210 hardware timed out during initialization",
+            DriverError::NicReadyTimeout => {
+                "wlan0: AX210 timed out waiting for NIC_READY during initialization"
+            }
+            DriverError::MacClockTimeout => {
+                "wlan0: AX210 timed out waiting for the MAC clock during initialization"
+            }
+            DriverError::FirmwareAliveTimeout => {
+                "wlan0: AX210 firmware did not come alive; the current driver still uses a stub firmware path and cannot start the real radio yet"
+            }
             DriverError::HardwareFault => "wlan0: AX210 hardware reported a fault",
             DriverError::BufferFull => "wlan0: AX210 driver buffer is full",
             DriverError::InvalidState => "wlan0: AX210 driver entered an invalid state",
@@ -43,8 +51,9 @@ fn init_state_message(state: WifiInitState) -> &'static str {
 
 /// Initialize the network stack on demand from the shell.
 ///
-/// Enumerates PCI devices, finds Intel AX210 (vendor 0x8086, device 0x2725/0x51F0/0x54F0/0x7F70),
-/// enables Bus Master + Memory Space, maps BAR0, and hands control to tcp-ip crate.
+/// Enumerates PCI devices, finds an Intel wireless controller compatible with
+/// the AX210 path, enables Bus Master + Memory Space, maps BAR0, and hands
+/// control to the tcp-ip crate.
 pub fn init() -> Result<(), &'static str> {
     use core::sync::atomic::Ordering;
 

@@ -151,11 +151,19 @@ pub fn find_xhci(devices: &[PciDevice]) -> Option<&PciDevice> {
         .find(|d| d.class == 0x0C && d.subclass == 0x03 && d.prog_if == 0x30)
 }
 
-/// Find an Intel AX210-family Wi-Fi adapter (vendor 0x8086).
+/// Find an Intel AX210-family Wi-Fi adapter.
+///
+/// Prefer known AX210/AX211 device IDs, but also accept Intel PCI functions
+/// that identify as generic network controllers or wireless-class devices so
+/// newer revisions are not silently missed.
 pub fn find_ax210(devices: &[PciDevice]) -> Option<&PciDevice> {
-    devices
-        .iter()
-        .find(|d| d.vendor_id == 0x8086 && matches!(d.device_id, 0x2725 | 0x51F0 | 0x54F0 | 0x7F70))
+    devices.iter().find(|d| {
+        let known_ax210_id = matches!(d.device_id, 0x2725 | 0x51F0 | 0x54F0 | 0x7F70);
+        let intel_network_controller = d.class == 0x02 && d.subclass == 0x80;
+        let intel_wireless_controller = d.class == 0x0D && d.subclass == 0x11;
+        d.vendor_id == 0x8086
+            && (known_ax210_id || intel_network_controller || intel_wireless_controller)
+    })
 }
 
 /// Enable Bus Master + Memory Space in the PCI command register (offset 0x04).
