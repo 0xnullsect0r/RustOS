@@ -16,6 +16,7 @@ use bootloader_api::{BootInfo, BootloaderConfig, entry_point};
 const BOOTLOADER_CONFIG: BootloaderConfig = {
     let mut config = BootloaderConfig::new_default();
     config.mappings.physical_memory = Some(Mapping::Dynamic);
+    config.kernel_stack_size = 2 * 1024 * 1024;
     config
 };
 
