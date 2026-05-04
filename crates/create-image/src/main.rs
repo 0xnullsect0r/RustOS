@@ -1,6 +1,5 @@
-use std::{env, fs, io::{Seek, SeekFrom, Write}, path::PathBuf, process};
+use std::{env, fs, io::{Seek, SeekFrom, Write, Read}, path::PathBuf, process};
 use gpt::GptConfig;
-use uuid::Uuid;
 
 const FAT32_PARTITION_SIZE: u64 = 512 * 1024 * 1024; // 512 MB
 const SECTOR_SIZE: u64 = 512;
@@ -59,7 +58,7 @@ fn add_fat32_partition(img_path: &PathBuf) -> std::io::Result<()> {
         new_size / 1024 / 1024);
     
     file.seek(SeekFrom::End(0))?;
-    let mut zeros = vec![0u8; 1024 * 1024];
+    let zeros = vec![0u8; 1024 * 1024];
     let mut written = current_size;
     while written < new_size {
         let to_write = std::cmp::min(zeros.len() as u64, new_size - written) as usize;
@@ -67,23 +66,22 @@ fn add_fat32_partition(img_path: &PathBuf) -> std::io::Result<()> {
         written += to_write as u64;
     }
     file.sync_all()?;
-
-    // Now use the gpt crate to add the partition entry
+    
+    // Use the gpt crate with proper configuration for the extended disk
     eprintln!("[create-image] Updating GPT table...");
     
     let mut disk = GptConfig::new()
         .writable(true)
         .open(img_path)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("GPT error: {}", e)))?;
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("GPT error on initial open: {}", e)))?;
 
     // Calculate partition location
-    let part_start_sector = (current_size / SECTOR_SIZE);
-    let part_end_sector = (new_size / SECTOR_SIZE) - 1;
-
-    // Use Microsoft Basic Data GUID for FAT32 (C12A7328-F81F-11D2-BA4B-00A0C93EC93B is EFI, we want 07000000...)
-    let part_type = Uuid::parse_str("ebd0a0a2-b9e5-4433-a802-60a0d38f6d5f").unwrap(); // Microsoft Basic Data
-
-    eprintln!("[create-image] Adding partition 2: sectors {} to {}", part_start_sector, part_end_sector);
+    let part_start_sector = (current_size / SECTOR_SIZE) as u64;
+    let total_sectors = (new_size / SECTOR_SIZE) as u64;
+    let part_end_sector = total_sectors - 34 - 1; // Leave room for backup GPT
+    
+    eprintln!("[create-image] Disk: {} sectors total", total_sectors);
+    eprintln!("[create-image] Partition 2: sectors {} to {}", part_start_sector, part_end_sector);
 
     let partition = gpt::partition_types::LINUX_FS;
     disk.add_partition("rustos-storage", part_start_sector, partition, part_end_sector, None)
@@ -100,7 +98,8 @@ fn add_fat32_partition(img_path: &PathBuf) -> std::io::Result<()> {
         .write(true)
         .open(img_path)?;
     
-    file.seek(SeekFrom::Start(current_size))?;
+    let fat32_start = current_size;
+    file.seek(SeekFrom::Start(fat32_start))?;
     
     let mut bpb = vec![0u8; 512];
     bpb[0] = 0xEB; // JMP instruction
@@ -130,11 +129,11 @@ fn add_fat32_partition(img_path: &PathBuf) -> std::io::Result<()> {
     bpb[26] = 0xFF;
     
     // Total sectors for this partition
-    let total_sectors = FAT32_PARTITION_SIZE / 512;
-    bpb[32] = ((total_sectors & 0xFF) as u8);
-    bpb[33] = (((total_sectors >> 8) & 0xFF) as u8);
-    bpb[34] = (((total_sectors >> 16) & 0xFF) as u8);
-    bpb[35] = (((total_sectors >> 24) & 0xFF) as u8);
+    let total_part_sectors = (part_end_sector - part_start_sector + 1);
+    bpb[32] = ((total_part_sectors & 0xFF) as u8);
+    bpb[33] = (((total_part_sectors >> 8) & 0xFF) as u8);
+    bpb[34] = (((total_part_sectors >> 16) & 0xFF) as u8);
+    bpb[35] = (((total_part_sectors >> 24) & 0xFF) as u8);
     
     // FAT size in sectors
     let fat_size = 0x1000u32;
@@ -158,6 +157,7 @@ fn add_fat32_partition(img_path: &PathBuf) -> std::io::Result<()> {
 
     Ok(())
 }
+
 
 
 
