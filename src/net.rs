@@ -15,6 +15,8 @@
 /// Enumerates PCI devices, finds Intel AX210 (vendor 0x8086, device 0x2725/0x51F0/0x54F0/0x7F70),
 /// enables Bus Master + Memory Space, maps BAR0, and hands control to tcp-ip crate.
 pub fn init() {
+    use core::sync::atomic::Ordering;
+    
     crate::serial_println!("[net] initializing network stack");
     
     let devices = crate::pci::enumerate();
@@ -31,15 +33,21 @@ pub fn init() {
         // Required for DMA to work
         crate::pci::enable_bus_master(dev.bus, dev.dev, dev.func);
         
-        // Map BAR0 (at least 0x30_0000 bytes) into kernel virtual address space
-        let bar0_virt = dev.mmio_base(0);
+        // Get the physical address of BAR0
+        let bar0_phys = dev.mmio_base(0);
         
-        if bar0_virt == 0 {
+        if bar0_phys == 0 {
             crate::serial_println!("[net] AX210 BAR0 is zero — not assigned by firmware");
             return;
         }
         
-        crate::serial_println!("[net] AX210 BAR0 mapped at 0x{:x}", bar0_virt);
+        // Map BAR0 physical address to kernel virtual address space
+        let phys_offset = crate::memory::PHYS_MEM_OFFSET.load(Ordering::Relaxed);
+        let bar0_virt = phys_offset + bar0_phys;
+        
+        crate::serial_println!(
+            "[net] AX210 BAR0 phys=0x{:x} virt=0x{:x}", bar0_phys, bar0_virt
+        );
         
         // Initialize the tcp-ip driver
         unsafe {
