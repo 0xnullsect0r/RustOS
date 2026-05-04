@@ -12,7 +12,7 @@ fn main() {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     let out_dir = std::env::var("OUT_DIR").unwrap();
 
-    // Pull both submodules to their latest upstream commits before building.
+    // Ensure submodules are initialized at the commits pinned by this repo.
     update_submodules(&manifest_dir);
 
     let tcp_ip_dir = Path::new(&manifest_dir).join("tcp-ip");
@@ -89,29 +89,23 @@ fn write_net_bins_rs(out_dir: &str, release_dir: &Path, build_ok: bool) {
     std::fs::write(&path, content).unwrap();
 }
 
-/// Pull both submodules to their latest upstream commits.
+/// Initialize submodules at the commits pinned by this repository.
 ///
-/// Uses `git submodule update --init --remote` so the build always tracks the
-/// HEAD of each submodule's default branch rather than a stale pinned commit.
-/// Failures are downgraded to a cargo warning so an offline build can still
-/// proceed with whatever commits are already checked out.
+/// Uses `git submodule update --init` so local builds honor the superproject's
+/// recorded submodule SHAs instead of mutating the working tree to whatever is
+/// currently at each remote HEAD. Failures are downgraded to a cargo warning so
+/// an offline build can still proceed with whatever commits are already checked
+/// out.
 fn update_submodules(manifest_dir: &str) {
     let result = Command::new("git")
-        .args([
-            "submodule",
-            "update",
-            "--init",
-            "--remote",
-            "tcp-ip",
-            "rsh",
-        ])
+        .args(["submodule", "update", "--init", "tcp-ip", "rsh"])
         .current_dir(manifest_dir)
         .status();
 
     match result {
         Ok(s) if s.success() => {}
         Ok(s) => println!(
-            "cargo:warning=git submodule update --remote exited with {s}; \
+            "cargo:warning=git submodule update exited with {s}; \
              using currently checked-out submodule commits"
         ),
         Err(e) => println!(

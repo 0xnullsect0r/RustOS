@@ -109,8 +109,8 @@ done
 SCRIPT_DIR="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")" && pwd)"
 cd "$SCRIPT_DIR"
 
-echo "Updating submodules to latest upstream commits..."
-git submodule update --init --remote --recursive
+echo "Updating submodules to pinned repository commits..."
+git submodule update --init --recursive
 
 echo "Building kernel (release)..."
 cargo build --release
