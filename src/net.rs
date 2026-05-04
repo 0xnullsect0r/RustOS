@@ -6,8 +6,11 @@
 //! - TCP/IP stack (ARP, IP, ICMP, UDP, TCP, DHCP)
 //! - Management binaries (/bin/wifi, /bin/ping, /bin/ifconfig, /bin/netstat)
 
+use alloc::boxed::Box;
 use spin::Mutex;
+
 use tcp_ip::driver::DriverError;
+use tcp_ip::driver::ax210::platform::{Ax210PlatformOps, DmaRegion};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum WifiInitState {
@@ -19,6 +22,7 @@ enum WifiInitState {
 }
 
 static WIFI_INIT_STATE: Mutex<WifiInitState> = Mutex::new(WifiInitState::Inactive);
+static AX210_FIRMWARE_CACHE: Mutex<Option<&'static [u8]>> = Mutex::new(None);
 
 fn init_state_message(state: WifiInitState) -> &'static str {
     match state {
@@ -31,6 +35,9 @@ fn init_state_message(state: WifiInitState) -> &'static str {
         WifiInitState::DriverFailed(err) => match err {
             DriverError::DeviceNotFound => "wlan0: AX210 device not found during driver init",
             DriverError::InvalidBar => "wlan0: AX210 BAR is invalid or unusable",
+            DriverError::FirmwareMissing => {
+                "wlan0: AX210 firmware file is missing; place iwlwifi-ty-a0-gf-a0-72.ucode or ...71.ucode under /lib/firmware"
+            }
             DriverError::FirmwareFault => "wlan0: AX210 firmware setup failed",
             DriverError::HardwareReadyTimeout => {
                 "wlan0: AX210 timed out taking PCI/NIC ownership during initialization"
@@ -49,6 +56,42 @@ fn init_state_message(state: WifiInitState) -> &'static str {
     }
 }
 
+fn ax210_dma_alloc(size: usize, align: usize) -> Result<DmaRegion, DriverError> {
+    let (virt, phys) = crate::memory::dma_alloc(size, align);
+    Ok(DmaRegion {
+        virt,
+        phys,
+        len: size,
+    })
+}
+
+fn ax210_load_firmware(primary: &str, fallback: &str) -> Result<&'static [u8], DriverError> {
+    if let Some(bytes) = *AX210_FIRMWARE_CACHE.lock() {
+        return Ok(bytes);
+    }
+
+    let mut guard = crate::vfs::VFS.lock();
+    let vfs = guard.as_mut().ok_or(DriverError::FirmwareMissing)?;
+
+    let bytes = match vfs.read_file(primary) {
+        Ok(bytes) => {
+            crate::serial_println!("[net] loaded AX210 firmware from {}", primary);
+            bytes
+        }
+        Err(_) => match vfs.read_file(fallback) {
+            Ok(bytes) => {
+                crate::serial_println!("[net] loaded AX210 firmware from {}", fallback);
+                bytes
+            }
+            Err(_) => return Err(DriverError::FirmwareMissing),
+        },
+    };
+
+    let leaked = Box::leak(bytes.into_boxed_slice()) as &'static [u8];
+    *AX210_FIRMWARE_CACHE.lock() = Some(leaked);
+    Ok(leaked)
+}
+
 /// Initialize the network stack on demand from the shell.
 ///
 /// Enumerates PCI devices, finds an Intel wireless controller compatible with
@@ -63,6 +106,13 @@ pub fn init() -> Result<(), &'static str> {
     }
 
     crate::serial_println!("[net] manual WiFi initialization requested");
+
+    unsafe {
+        tcp_ip::kernel::register_ax210_platform(Ax210PlatformOps {
+            dma_alloc: ax210_dma_alloc,
+            load_firmware: ax210_load_firmware,
+        });
+    }
 
     let devices = crate::pci::enumerate();
 
