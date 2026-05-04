@@ -102,6 +102,13 @@ Use [Rufus](https://rufus.ie/) in DD Image mode.
 
 ## 📚 Documentation
 
+### Phase 6 - Comprehensive Reference (NEW)
+- **[SHELL_COMMANDS.md](SHELL_COMMANDS.md)** — Complete shell command reference with flags, examples, and limitations
+- **[SYSCALLS.md](SYSCALLS.md)** — Full syscall documentation (file I/O, process, network syscalls 0-310)
+- **[LIMITATIONS.md](LIMITATIONS.md)** — Known limitations, workarounds, and development roadmap
+- **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** — Common issues, solutions, and error messages
+
+### Architecture and Development
 - **[COPILOT_INSTRUCTIONS.md](COPILOT_INSTRUCTIONS.md)** — Comprehensive guide for AI coding assistants
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** — System design and architecture overview
 - **[DEVELOPMENT.md](DEVELOPMENT.md)** — Developer guide for contributing
@@ -117,6 +124,8 @@ RustOS boots into a built-in kernel shell with the prompt:
 rsh:/>
 ```
 
+For a complete command reference with flags, options, and examples, see **[SHELL_COMMANDS.md](SHELL_COMMANDS.md)**.
+
 ### Available Commands
 
 **File System:**
@@ -129,6 +138,7 @@ rsh:/>
 - `cp <src> <dst>` — Copy file
 - `mv <src> <dst>` — Move/rename file
 - `write <file> <text>` — Write text to file
+- `grep [flags] <pattern> <file>` — Search file contents
 
 **System:**
 - `help` — Show command list
@@ -137,17 +147,23 @@ rsh:/>
 - `clear` — Clear screen
 - `reboot` — Reboot system
 - `exec <path>` — Execute ELF binary
+- `color <fg> <bg>` — Set terminal colors
 
 **Hardware:**
 - `lspci` — List PCI devices
 - `lsusb` — List USB devices  
 - `lsblk` — List block devices
+- `ps` — List processes
 - `usbscan` — Detect and mount new USB drives
-- `mount <device> <path>` — Mount filesystem
+- `mount [device path]` — Show/mount filesystems
+- `umount <path>` — Unmount filesystem
 
 **Network:**
 - `net` — Show network status
-- `wifi scan` — Scan for Wi-Fi networks
+- `wifi [scan|status|connect <ssid>]` — WiFi control
+- `ping <host>` — Test network connectivity
+- `ifconfig` — Show network interface config
+- `netstat` — Show active connections
 - `wifi connect <ssid> <password>` — Connect to network
 - `wifi status` — Show connection status
 - `ping <host>` — Send ICMP echo request
@@ -191,7 +207,47 @@ cargo +nightly build \
 
 Copy the ELF to a USB drive, mount in RustOS, and run with `exec`.
 
-## 🏗️ Architecture
+## 🧪 Testing and Quality Assurance
+
+### Phase Completion Status
+
+| Phase | Status | Coverage | Focus |
+|-------|--------|----------|-------|
+| **Phase 1** | ✅ Complete | Boot, Memory, Interrupts | Core kernel infrastructure |
+| **Phase 2** | ✅ Complete | PCI, XHCI USB, Mass Storage | Hardware support and drivers |
+| **Phase 3** | ✅ Complete | FAT32, VFS, RamFS | Filesystem abstraction layer |
+| **Phase 4** | ✅ Complete | Shell, Commands, Syscalls | User interface and system calls |
+| **Phase 5** | ✅ Complete | Stability, Edge Cases, Audit | Production readiness improvements |
+| **Phase 6** | ✅ Complete | Documentation, Integration Tests | Comprehensive reference and test suite |
+
+### Test Coverage
+
+- **Unit Tests:** 50+ unit tests in QEMU
+- **Integration Tests:** 
+  - Storage operations (file I/O, FAT32, VFS)
+  - Network syscalls (socket, bind, connect, etc.)
+  - Shell command execution and argument handling
+- **Hardware Tests:** Real hardware validation on x86_64 systems
+- **Regression Tests:** CI/CD pipeline with automated testing
+
+For detailed test results, see:
+- **[PHASE5_TEST_REPORT.md](PHASE5_TEST_REPORT.md)** — Phase 5 stability testing results
+- **[PHASE5_STABILITY_TESTS.md](PHASE5_STABILITY_TESTS.md)** — Phase 5 test plan
+
+### Known Limitations
+
+RustOS has some intentional limitations for Phase 6:
+
+- No pipe support (`|`) — Use temporary files instead
+- No output redirection (`>`) — Use `write` command
+- No command substitution — Use separate commands
+- FAT32 limited to 8.3 DOS filenames — Use RamFS for longer names
+- No hot-plug USB support — Insert devices before boot
+- Intel AX210 only for WiFi — Check hardware compatibility
+- No IPv6 support — IPv4 required
+- 16 MiB heap limit — Adequate for most operations
+
+For a comprehensive list of limitations and workarounds, see **[LIMITATIONS.md](LIMITATIONS.md)**.
 
 ### System Components
 
