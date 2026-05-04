@@ -39,6 +39,12 @@ fn init_state_message(state: WifiInitState) -> &'static str {
                 "wlan0: AX210 firmware file is missing; install /lib/firmware/iwlwifi-ty-a0-gf-a0-72.ucode or /lib/firmware/iwlwifi-ty-a0-gf-a0-71.ucode"
             }
             DriverError::FirmwareFault => "wlan0: AX210 firmware setup failed",
+            DriverError::FirmwareMissingIml => {
+                "wlan0: AX210 firmware is missing the required initial-load memory (IML) blob"
+            }
+            DriverError::FirmwareMissingRuntimeSections => {
+                "wlan0: AX210 firmware is missing the required runtime section layout"
+            }
             DriverError::HardwareReadyTimeout => {
                 "wlan0: AX210 timed out taking PCI/NIC ownership during initialization"
             }
