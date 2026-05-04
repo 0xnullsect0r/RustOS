@@ -93,7 +93,7 @@ pub fn print_help() {
     crate::println!("  exec <path>             Execute an ELF binary");
     crate::println!("  meminfo                 Show heap memory info");
     crate::println!("  net                     Show network stack status");
-    crate::println!("  wifi [status|scan|connect <ssid>]  WiFi control");
+    crate::println!("  wifi [init|status|scan|connect <ssid>]  WiFi control");
     crate::println!("  ping <host>             Test network reachability");
     crate::println!("  ifconfig                Show network interface config");
     crate::println!("  netstat                 Show active connections");
@@ -1127,11 +1127,7 @@ fn cmd_umount(shell: &mut Shell, args: &[&str]) {
 // ---------------------------------------------------------------------------
 
 fn cmd_net() {
-    if let Some(s) = tcp_ip::kernel::status_str() {
-        crate::println!("{}", s);
-    } else {
-        crate::println!("wlan0: driver not active (no AX210 found or init failed)");
-    }
+    crate::net::print_status();
 }
 
 // ---------------------------------------------------------------------------
@@ -1859,14 +1855,21 @@ pub fn cmd_ps(args: &[&str]) {
 
 pub fn cmd_wifi(args: &[&str]) {
     match args.first().copied().unwrap_or("status") {
-        "status" | "" => {
-            if let Some(s) = tcp_ip::kernel::status_str() {
-                crate::println!("{}", s);
-            } else {
-                crate::println!("wlan0: driver not active (no AX210 found or init failed)");
+        "init" => match crate::net::init() {
+            Ok(()) => {
+                crate::println!("wifi: AX210 driver initialized");
+                crate::net::print_status();
             }
+            Err(msg) => crate::println!("wifi init: {}", msg),
+        },
+        "status" | "" => {
+            crate::net::print_status();
         }
         "scan" => {
+            if !tcp_ip::kernel::is_active() {
+                crate::println!("wifi scan: driver inactive; run 'wifi init' first");
+                return;
+            }
             crate::println!("Scanning for wireless networks...");
             let mut buf = [0u8; 4096];
             match tcp_ip::kernel::dispatch_syscall(
@@ -1902,15 +1905,65 @@ pub fn cmd_wifi(args: &[&str]) {
             if args.len() < 2 {
                 crate::println!("Usage: wifi connect <ssid> [password]");
             } else {
+                if !tcp_ip::kernel::is_active() {
+                    crate::println!("wifi connect: driver inactive; run 'wifi init' first");
+                    return;
+                }
+
+                let ssid = args[1].as_bytes();
+                let password = args.get(2).copied().unwrap_or("").as_bytes();
+                let security = if password.is_empty() {
+                    tcp_ip::sys::security_proto::OPEN
+                } else {
+                    tcp_ip::sys::security_proto::WPA2
+                };
+
+                let mut connect_args = tcp_ip::sys::WifiConnectArgs {
+                    ssid_len: ssid.len().min(32) as u8,
+                    ssid: [0u8; 32],
+                    security,
+                    pass_len: password.len().min(64) as u8,
+                    pass: [0u8; 64],
+                };
+                connect_args.ssid[..connect_args.ssid_len as usize]
+                    .copy_from_slice(&ssid[..connect_args.ssid_len as usize]);
+                connect_args.pass[..connect_args.pass_len as usize]
+                    .copy_from_slice(&password[..connect_args.pass_len as usize]);
+
+                let connect_bytes = unsafe {
+                    core::slice::from_raw_parts(
+                        &connect_args as *const tcp_ip::sys::WifiConnectArgs as *const u8,
+                        core::mem::size_of::<tcp_ip::sys::WifiConnectArgs>(),
+                    )
+                };
+
                 crate::println!("Connecting to '{}'...", args[1]);
-                crate::println!("Error: WiFi hardware not initialised");
+                match tcp_ip::kernel::dispatch_syscall(
+                    tcp_ip::sys::SYS_WIFI_CONNECT,
+                    connect_bytes.as_ptr() as u64,
+                    connect_bytes.len() as u64,
+                    0,
+                ) {
+                    Some(0) => crate::println!("wifi: connection initiated"),
+                    Some(code) => crate::println!("wifi connect: error code {}", code),
+                    None => crate::println!("wifi connect: syscall unavailable"),
+                }
             }
         }
         "disconnect" => {
-            crate::println!("Not connected.");
+            if !tcp_ip::kernel::is_active() {
+                crate::println!("wifi disconnect: driver inactive; run 'wifi init' first");
+                return;
+            }
+            match tcp_ip::kernel::dispatch_syscall(tcp_ip::sys::SYS_WIFI_DISCONNECT, 0, 0, 0) {
+                Some(0) => crate::println!("wifi: disconnected"),
+                Some(code) => crate::println!("wifi disconnect: error code {}", code),
+                None => crate::println!("wifi disconnect: syscall unavailable"),
+            }
         }
         "help" | "--help" | "-h" => {
-            crate::println!("Usage: wifi [status|scan|connect <ssid>|disconnect|help]");
+            crate::println!("Usage: wifi [init|status|scan|connect <ssid>|disconnect|help]");
+            crate::println!("  init        Probe PCI, find the AX210, and initialize the WiFi driver");
             crate::println!("  status      Show WiFi adapter and connection status (default)");
             crate::println!("  scan        Scan for nearby wireless networks");
             crate::println!("  connect     Associate with an SSID");

@@ -91,8 +91,9 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     // This must happen after VFS init and heap init.
     rustos::net_bins::install();
 
-    // Initialize network stack and probe PCI for XHCI and mount USB FAT32
-    rustos::net::init();
+    // Probe PCI for XHCI and mount USB FAT32. WiFi driver bring-up is manual:
+    // users must run `wifi init` after boot so AX210 init is opt-in.
+    rustos::serial_println!("[net] WiFi driver init is manual; run `wifi init`");
     init_usb_storage();
     rustos::task::keyboard::init();
     rustos::enable_interrupts();
