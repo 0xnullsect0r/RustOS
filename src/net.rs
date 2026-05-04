@@ -61,6 +61,9 @@ fn init_state_message(state: WifiInitState) -> &'static str {
             DriverError::BufferFull => "wlan0: AX210 driver buffer is full",
             DriverError::InvalidState => "wlan0: AX210 driver entered an invalid state",
             DriverError::BufferTooSmall => "wlan0: AX210 driver buffer is too small",
+            DriverError::Unsupported => {
+                "wlan0: AX210 runtime transport support is incomplete for that operation"
+            }
         },
     }
 }
