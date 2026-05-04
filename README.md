@@ -1,83 +1,187 @@
 # RustOS
 
-A minimal x86_64 operating system kernel written in Rust, featuring a userspace shell (`rsh`),
-virtual filesystem, USB mass-storage support, tcp-ip stack integration, and a Rust userspace runtime.
+A modern x86_64 operating system kernel written in Rust, featuring Wi-Fi networking, USB mass storage, 
+virtual filesystem, framebuffer graphics, and comprehensive hardware support.
+
+**Key Highlights:**
+- 🚀 **Modern Boot**: UEFI-capable bootloader with GOP framebuffer support
+- 🌐 **Networking**: Intel AX210 Wi-Fi 6E driver with full TCP/IP stack (tcp-ip submodule)
+- 💾 **Storage**: USB 3.0 XHCI driver with FAT32 filesystem support
+- 🖥️ **Graphics**: Native UEFI framebuffer with software text rendering
+- 🔧 **Development**: Comprehensive testing, CI/CD, and documentation
 
 Built on the foundation of [Philipp Oppermann's "Writing an OS in Rust"](https://os.phil-opp.com/)
-tutorial series (through post-12), then extended with a modular architecture, VFS layer,
-XHCI USB driver, FAT32 filesystem, ELF process loader, and a userspace shell environment.
+tutorial series, extended with modern drivers, networking, and a modular architecture.
 
-## Features
+## ✨ Features
 
-- **Bare-metal x86_64 kernel** — no OS underneath; boots via BIOS (or USB)
-- **VGA text output** with colour support and backspace handling
-- **UART serial** for debugging output
-- **GDT + IDT** — segmentation, interrupt/exception handlers
-- **Memory paging** + **heap allocator** (fixed-size block allocator)
-- **Async executor** — keyboard input handled via `async/await`
-- **Userspace shell (`rsh`)** launched from `/bin/rsh` at boot
-- **VFS with mount table** — FAT32 storage partition as root `/` + additional FAT32 mounts
-- **PCI enumeration** — finds XHCI host controllers on the PCI bus
-- **XHCI USB 3.x driver** — full controller init, port enumeration, control + bulk transfers
-- **USB Mass Storage (BOT/SCSI)** — reads and writes sectors on USB flash drives
-- **FAT32 driver** — short names, long file names (LFN), cluster-chain traversal, file create/overwrite
-- **Hot-plug USB** — `usbscan` command detects newly connected drives and mounts them
-- **TCP/IP + WiFi integration** — `tcp-ip` submodule ABI hooks, AX210 discovery, and network syscalls
-- **ELF process loader** — maps PT_LOAD segments and jumps to userspace entry points
-- **`int 0x80` syscall interface** — `SYS_READ`, `SYS_WRITE`, `SYS_EXIT`, `SYS_OPEN`, `SYS_CLOSE`
-- **[rustos-rt](../../tree/rustos-rt)** — companion Rust userspace runtime crate (separate branch)
+### Core Kernel
+- **Bare-metal x86_64 kernel** — No OS underneath; boots directly on hardware
+- **UEFI + BIOS support** — Modern GOP framebuffer with legacy VGA fallback
+- **Hardware interrupts** — GDT, IDT, exception handlers, and PIC/APIC support
+- **Memory management** — 4-level paging, heap allocator (16 MiB), DMA allocator
+- **Async executor** — Cooperative multitasking for I/O-bound tasks
 
-## Shell
+### Storage & Filesystem
+- **USB 3.0 XHCI driver** — Full controller init, port enumeration, bulk transfers
+- **USB Mass Storage** — BOT/SCSI protocol for USB flash drives
+- **FAT32 filesystem** — LFN support, cluster chains, read/write operations
+- **Virtual filesystem** — Mount table, unified file interface
+- **Hot-plug support** — `usbscan` command detects and mounts new devices
 
-RustOS boots directly into the `/bin/rsh` console environment. The prompt is:
+### Networking
+- **Intel AX210 Wi-Fi 6E** — Native kernel driver via tcp-ip submodule
+- **Full TCP/IP stack** — ARP, IP, ICMP, UDP, TCP, DHCP
+- **802.11 management** — WEP/WPA/WPA2/WPA3 support
+- **Network syscalls** — 300-310 for userspace network access
+- **Userspace tools** — `/bin/wifi`, `/bin/ping`, `/bin/ifconfig`, `/bin/netstat`
 
-```console
+### Display & I/O
+- **UEFI GOP framebuffer** — Native graphics output with 8x16 bitmap font
+- **VGA text mode** — Legacy fallback for BIOS systems
+- **UART serial** — COM1 debug output
+- **Keyboard input** — PS/2 with interrupt and polling modes
+
+### Development
+- **ELF process loader** — Load and execute userspace programs
+- **Syscall interface** — `int 0x80` with 0-99 (file I/O), 100-199 (process), 300-310 (network)
+- **Comprehensive tests** — Integration tests via QEMU
+- **CI/CD pipeline** — Automated checks, formatting, linting, and testing
+- **Extensive documentation** — Architecture, development, and AI assistant guides
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+```bash
+# Install Rust nightly toolchain
+rustup toolchain install nightly
+rustup component add rust-src llvm-tools-preview --toolchain nightly
+rustup default nightly
+
+# Install bootimage tool
+cargo install bootimage
+
+# Install QEMU (for testing)
+sudo apt install qemu-system-x86 ovmf  # Ubuntu/Debian
+sudo dnf install qemu-system-x86       # Fedora
+brew install qemu                      # macOS
+```
+
+### Build and Run
+
+```bash
+# Clone repository with submodules
+git clone --recurse-submodules https://github.com/RustOS-Dev/RustOS.git
+cd RustOS
+
+# Build and run in QEMU
+cargo run
+
+# Or build bootable image
+cargo bootimage
+# Output: target/x86_64-rustos/debug/bootimage-rustos.bin
+```
+
+### Write to USB Drive
+
+**Linux/macOS:**
+```bash
+# Using the installer script (recommended)
+./write_to_drive.sh --drive /dev/sdX
+
+# Or manually with dd
+sudo dd if=target/x86_64-rustos/debug/bootimage-rustos.bin of=/dev/sdX bs=4M status=progress
+sync
+```
+
+**Windows:**
+Use [Rufus](https://rufus.ie/) in DD Image mode.
+
+**⚠️ IMPORTANT:** Enable **Legacy Boot / CSM** in your UEFI settings to boot on real hardware.
+
+## 📚 Documentation
+
+- **[COPILOT_INSTRUCTIONS.md](COPILOT_INSTRUCTIONS.md)** — Comprehensive guide for AI coding assistants
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** — System design and architecture overview
+- **[DEVELOPMENT.md](DEVELOPMENT.md)** — Developer guide for contributing
+- **[NETWORK_INTEGRATION.md](NETWORK_INTEGRATION.md)** — TCP/IP stack integration details
+- **[FRAMEBUFFER_IMPLEMENTATION.md](FRAMEBUFFER_IMPLEMENTATION.md)** — GOP framebuffer driver implementation
+
+## 💻 Using RustOS
+
+### Shell Interface
+
+RustOS boots into a built-in kernel shell with the prompt:
+```
 rsh:/>
 ```
 
-The `/bin` directory is a virtual command directory, so `ls /bin` shows the
-commands available to `rsh`.
+### Available Commands
 
-Legacy kernel commands are exposed as `/bin/*` executables for `rsh` execution:
-`/bin/help`, `/bin/echo`, `/bin/clear`, `/bin/uname`, `/bin/color`, `/bin/pwd`,
-`/bin/ls`, `/bin/cd`, `/bin/mkdir`, `/bin/rm`, `/bin/cat`, `/bin/write`,
-`/bin/cp`, `/bin/mv`, `/bin/meminfo`, `/bin/mount`, `/bin/exec`, `/bin/usbscan`,
-`/bin/reboot`, `/bin/rsh`, `/bin/net`.
+**File System:**
+- `ls [path]` — List directory contents
+- `cd <path>` — Change directory
+- `pwd` — Print working directory
+- `cat <file>` — Display file contents
+- `mkdir <dir>` — Create directory
+- `rm <path>` — Remove file/directory
+- `cp <src> <dst>` — Copy file
+- `mv <src> <dst>` — Move/rename file
+- `write <file> <text>` — Write text to file
 
-The `net` command reports the pinned tcp-ip submodule and detected WiFi device.
-The tcp-ip userspace tools (`wifi`, `ping`, `ifconfig`, `netstat`) are provided
-by the `tcp-ip` submodule and can be built as RustOS ELFs and copied to `/bin`.
+**System:**
+- `help` — Show command list
+- `uname` — Show system information
+- `meminfo` — Display memory usage
+- `clear` — Clear screen
+- `reboot` — Reboot system
+- `exec <path>` — Execute ELF binary
 
-## USB flash drive workflow
+**Hardware:**
+- `lspci` — List PCI devices
+- `lsusb` — List USB devices  
+- `lsblk` — List block devices
+- `usbscan` — Detect and mount new USB drives
+- `mount <device> <path>` — Mount filesystem
 
-### Booting + using a data drive
+**Network:**
+- `net` — Show network status
+- `wifi scan` — Scan for Wi-Fi networks
+- `wifi connect <ssid> <password>` — Connect to network
+- `wifi status` — Show connection status
+- `ping <host>` — Send ICMP echo request
+- `ifconfig` — Display network interfaces
+- `netstat` — Show network connections
 
+### USB Storage Workflow
+
+```bash
+# 1. Boot RustOS from USB (partition 1)
+#    Partition 2 auto-mounts as root (/)
+
+# 2. Insert second USB drive with your files
+usbscan              # Detect and mount at /usb1
+
+# 3. Use files
+ls /usb1
+cat /usb1/readme.txt
+cp /usb1/program.elf /program.elf
+exec /program.elf    # Run ELF binary
 ```
-# Boot RustOS from a USB stick.
-# The boot drive's partition 2 is mounted as root filesystem (/).
-# Partition 1 is mounted at /usb.
 
-# Plug in a second USB drive with your files, then in the shell:
-usbscan               # detects the new drive, mounts it at /usb1
+### Running Userspace Programs
 
-ls /usb1              # browse the FAT32 volume
-cat /usb1/readme.txt  # read a file
-cp /usb1/hello /hello # copy to root filesystem
-exec /hello           # run an ELF binary
-```
+See the [rustos-rt branch](../../tree/rustos-rt) for the companion runtime library.
 
-### Running a Rust userspace program on RustOS
-
-See the **[`rustos-rt` branch](../../tree/rustos-rt)** for the companion runtime crate that
-provides `_start`, `sys_write`, `sys_read`, `sys_exit`, the custom target JSON
-(`x86_64-unknown-rustos.json`), and a linker script.
-
+Example Rust program:
 ```toml
-# Cargo.toml of your program
+# Cargo.toml
 [dependencies]
-rustos-rt = { git = "https://github.com/0xnullsect0r/RustOS", branch = "rustos-rt" }
+rustos-rt = { git = "https://github.com/RustOS-Dev/RustOS", branch = "rustos-rt" }
 ```
 
+Build:
 ```bash
 cargo +nightly build \
   --target path/to/x86_64-unknown-rustos.json \
@@ -85,169 +189,320 @@ cargo +nightly build \
   --release
 ```
 
-Copy the resulting ELF to a FAT32 drive, mount it in RustOS, and run with `exec`.
+Copy the ELF to a USB drive, mount in RustOS, and run with `exec`.
 
-## QEMU with USB
+## 🏗️ Architecture
 
-To test USB support in QEMU, first create a FAT32 disk image:
+### System Components
 
-```sh
+```
+┌─────────────────────────────────────────────┐
+│              Applications                    │
+│         (Userspace ELF programs)            │
+└──────────────────┬──────────────────────────┘
+                   │ int 0x80 syscalls
+┌──────────────────┴──────────────────────────┐
+│                Kernel Core                   │
+│  ┌──────────┐ ┌──────────┐ ┌─────────────┐ │
+│  │  Memory  │ │   Task   │ │ Interrupts  │ │
+│  │   Mgmt   │ │ Executor │ │  (IDT/PIC)  │ │
+│  └──────────┘ └──────────┘ └─────────────┘ │
+│  ┌───────────────────────────────────────┐  │
+│  │      Virtual Filesystem (VFS)         │  │
+│  │ ┌────────┐ ┌────────┐ ┌───────────┐  │  │
+│  │ │ FAT32  │ │ RAMFS  │ │ /bin VFS  │  │  │
+│  │ └────────┘ └────────┘ └───────────┘  │  │
+│  └───────────────────────────────────────┘  │
+└──────────────────┬──────────────────────────┘
+                   │
+┌──────────────────┴──────────────────────────┐
+│              Device Drivers                  │
+│  ┌────────────┐ ┌────────────┐ ┌──────────┐│
+│  │Framebuffer │ │  USB XHCI  │ │ Network  ││
+│  │    (GOP)   │ │  + MSC BOT │ │  (AX210) ││
+│  └────────────┘ └────────────┘ └──────────┘│
+└──────────────────┬──────────────────────────┘
+                   │
+┌──────────────────┴──────────────────────────┐
+│              Hardware Layer                  │
+│   x86_64 CPU │ RAM │ PCI │ USB │ WiFi │    │
+└─────────────────────────────────────────────┘
+```
+
+### Boot Sequence
+
+```
+UEFI Firmware
+    ↓
+Bootloader (bootloader 0.11)
+    ├── Initialize GOP framebuffer
+    ├── Setup 4-level paging
+    ├── Load kernel ELF
+    └── Jump to kernel_main()
+        ↓
+Kernel Initialization
+    ├── Serial port init
+    ├── Framebuffer init
+    ├── GDT/IDT setup
+    ├── Heap allocator
+    ├── VFS initialization
+    ├── PCI enumeration
+    ├── USB stack init
+    ├── Network stack init
+    └── Launch shell
+```
+
+For detailed architecture information, see [ARCHITECTURE.md](ARCHITECTURE.md).
+
+## 📂 Project Structure
+
+```
+RustOS/
+├── src/
+│   ├── main.rs              # Kernel entry point
+│   ├── lib.rs               # Crate root
+│   ├── arch/x86_64/         # Architecture-specific code
+│   ├── drivers/             # Device drivers (framebuffer, VGA, serial)
+│   ├── fs/fat32/            # FAT32 filesystem
+│   ├── usb/                 # USB XHCI + mass storage
+│   ├── vfs/                 # Virtual filesystem
+│   ├── net.rs               # Network integration (tcp-ip)
+│   ├── process/             # ELF loader
+│   ├── syscall/             # System call dispatcher
+│   └── shell/               # Built-in kernel shell
+├── tcp-ip/                  # Network stack submodule
+├── rsh/                     # Shell submodule  
+├── assets/                  # Fonts and resources
+├── tests/                   # Integration tests
+├── build.rs                 # Build script
+├── Cargo.toml               # Dependencies
+└── x86_64-rustos.json       # Custom target specification
+```
+
+## 🧪 Testing
+
+### Running Tests
+
+```bash
+# All integration tests
+cargo test
+
+# Specific test
+cargo test --test test_name
+
+# With output
+cargo test -- --nocapture
+```
+
+### Test Coverage
+
+Tests include:
+- Memory allocation and heap
+- VFS and filesystem operations
+- USB device detection
+- System call interface
+- Boot process validation
+
+Tests run automatically in QEMU via custom test harness.
+
+## 🔧 Development
+
+### Build Commands
+
+```bash
+cargo check          # Quick compilation check
+cargo fmt            # Format code
+cargo clippy         # Lint code
+cargo build          # Debug build
+cargo build --release # Optimized build
+cargo bootimage      # Create bootable image
+cargo run            # Build and run in QEMU
+```
+
+### Creating Test Disk Images
+
+```bash
+# Create FAT32 test disk
 dd if=/dev/zero of=disk.img bs=1M count=32
 mkfs.fat -F 32 disk.img
-# optionally: mount and copy files
+
+# Mount and add files
+mkdir -p /tmp/test_mount
+sudo mount -o loop disk.img /tmp/test_mount
+sudo cp files/* /tmp/test_mount/
+sudo umount /tmp/test_mount
 ```
 
-Then run:
+### Debugging
 
-```sh
-cargo run   # uses the run-args in Cargo.toml automatically
+**Serial Output** (always available):
+```rust
+serial_println!("[debug] Value: {:?}", value);
 ```
 
-The `[package.metadata.bootimage] run-args` in `Cargo.toml` already include:
-```
--device qemu-xhci,id=xhci
--drive if=none,id=usbdisk,file=disk.img,format=raw
--device usb-storage,bus=xhci.0,drive=usbdisk
-```
+**GDB Debugging**:
+```bash
+# Terminal 1: QEMU with GDB stub
+qemu-system-x86_64 ... -s -S
 
-## Project structure
-
-```
-src/
-├── main.rs               # Kernel entry point, initializes hardware and built-in shell
-├── lib.rs                # Crate root, init(), test infrastructure
-├── arch/x86_64/
-│   ├── gdt.rs            # Global Descriptor Table
-│   ├── interrupts.rs     # IDT, exception + IRQ handlers
-│   └── memory/           # Page table init, frame allocators, DMA alloc
-├── drivers/
-│   ├── framebuffer.rs    # UEFI GOP framebuffer text output
-│   ├── vga.rs            # VGA text buffer fallback
-│   └── serial.rs         # UART 16550 serial driver
-├── allocator/            # Heap allocator (fixed-size block)
-├── task/                 # Async executor + keyboard stream
-├── pci/                  # PCI bus enumeration
-├── usb/
-│   ├── mod.rs            # BlockDevice trait, USB_XHCI global, mount helpers
-│   ├── xhci/             # XHCI host controller driver (TRBs, rings, commands)
-│   └── mass_storage/     # USB MSC BOT helper re-exports
-├── fs/
-│   └── fat32/            # FAT32 read-only driver (BPB, clusters, LFN)
-├── vfs/
-│   ├── mod.rs            # Filesystem trait, mount table, VFS global
-│   └── ramfs.rs          # In-memory RAM filesystem
-├── process/              # ELF loader, process exec
-└── syscall/              # int 0x80 dispatcher
-
-crates/
-└── rustos-rt/            # Userspace Rust runtime (also on branch rustos-rt)
-
-rsh/                      # Shell submodule (RustOS-Dev/rsh)
-tcp-ip/                   # TCP/IP + WiFi stack submodule (RustOS-Dev/tcp-ip)
+# Terminal 2: GDB
+gdb target/x86_64-rustos/debug/rustos
+(gdb) target remote :1234
+(gdb) break kernel_main
+(gdb) continue
 ```
 
-## Building and running
+See [DEVELOPMENT.md](DEVELOPMENT.md) for comprehensive development guide.
 
-### Prerequisites
+## 🔄 CI/CD
 
-```sh
-rustup toolchain install nightly
-rustup component add rust-src llvm-tools-preview --toolchain nightly
-cargo install bootimage
-sudo apt install qemu-system-x86   # or equivalent
+GitHub Actions automatically runs on every push:
+- ✅ `cargo check` — Compilation check
+- ✅ `cargo fmt --check` — Code formatting
+- ✅ `cargo clippy` — Linting
+- ✅ `cargo test` — Integration tests in QEMU
+
+## 🌐 Submodules
+
+RustOS uses git submodules for modular components:
+
+### tcp-ip (Network Stack)
+- **Repository**: [RustOS-Dev/tcp-ip](https://github.com/RustOS-Dev/tcp-ip)
+- **Purpose**: Intel AX210 Wi-Fi driver, TCP/IP stack
+- **Auto-update**: `build.rs` pulls latest on every build
+
+### rsh (Shell)
+- **Repository**: [RustOS-Dev/rsh](https://github.com/RustOS-Dev/rsh)  
+- **Purpose**: Userspace shell (future integration)
+- **Auto-update**: `build.rs` pulls latest on every build
+
+**Manual Update**:
+```bash
+git submodule update --init --recursive --remote
 ```
 
-### Run in QEMU
+## 📦 Releases
 
-```sh
-cargo run
-```
+### Creating a Release
 
-### Run tests
+Push a version tag to trigger automated release build:
 
-```sh
-cargo test
-```
-
-### Build bootable binary
-
-```sh
-cargo bootimage
-# Produces: target/x86_64-rustos/debug/bootimage-rustos.bin
-```
-
-Write to a USB stick (Linux):
-```sh
-sudo dd if=target/x86_64-rustos/debug/bootimage-rustos.bin of=/dev/sdX bs=4M status=progress && sync
-```
-
-> **Note:** After writing, `lsblk` will show your USB drive with **no partitions** — this is
-> outdated for the release installer script. `write_to_drive.sh` now creates a second FAT32
-> storage partition that occupies the remaining disk space and is used as root (`/`) in RustOS.
-
-## Releases
-
-Push a version tag to trigger a GitHub Actions release:
-
-```sh
-git tag v0.1.0 && git push origin v0.1.0
+```bash
+git tag v0.2.0
+git push origin v0.2.0
 ```
 
 GitHub Actions will:
 1. Build with `cargo bootimage --release`
-2. Rename the output to `rustos-<version>.img`
-3. Publish `rustos-<version>.img` as a GitHub Release asset (raw x86_64 BIOS disk image)
+2. Create `rustos-<version>.img`
+3. Publish as GitHub Release with download link
 
-### Writing the release image to a USB drive
+### Installing from Release
 
-Use the local installer script (builds locally, then writes to USB):
-
-```sh
+**Method 1: Installer Script**
+```bash
 ./write_to_drive.sh --drive /dev/sdX
 ```
 
-or write a release image manually:
+Creates:
+- Partition 1: Boot/EFI partition
+- Partition 2: FAT32 root filesystem (RUSTOS_ROOT)
 
-**Linux / macOS:**
-```sh
-sudo dd if=rustos-v0.1.0.img of=/dev/sdX bs=4M status=progress && sync
-```
-Replace `/dev/sdX` with your USB device (e.g. `/dev/sdb`). **Do NOT use a partition**
-(e.g. `/dev/sdb1`) — write to the whole device.
-
-After `write_to_drive.sh` finishes, `lsblk` will show:
-- partition 1 (boot/EFI)
-- partition 2 (`RUSTOS_ROOT`, FAT32 storage/root filesystem)
-
-**Windows (Rufus):** Select the `.img` file and choose **"DD Image"** write mode.
-
-### BIOS / CSM requirement
-
-This kernel uses a legacy BIOS bootloader. To boot it on real hardware:
-
-- In your UEFI firmware settings, enable **Legacy Boot / CSM** (Compatibility Support Module).
-- Systems set to **UEFI-only** mode will not boot this image.
-
-### Test the release image in QEMU (no USB drive needed)
-
-```sh
-qemu-system-x86_64 \
-  -drive format=raw,file=rustos-v0.1.0.img \
-  -serial stdio
+**Method 2: Manual (Linux/macOS)**
+```bash
+sudo dd if=rustos-v0.2.0.img of=/dev/sdX bs=4M status=progress
+sync
 ```
 
-## CI
+**Method 3: Windows (Rufus)**
+1. Download `.img` file
+2. Open [Rufus](https://rufus.ie/)
+3. Select "DD Image" mode
+4. Flash to USB
 
-Every push and pull request runs:
-- `cargo check` — compilation check
-- `cargo fmt --check` — formatting
-- `cargo clippy` — lints
-- `cargo test` — integration tests under QEMU
+### UEFI Settings
 
-## Submodules
+RustOS uses a **legacy BIOS bootloader**. To boot on modern systems:
 
-Clone/update with submodules so `rsh` and `tcp-ip` are available:
+1. Enter UEFI firmware settings (usually F2, F10, or Del during boot)
+2. Enable **Legacy Boot** or **CSM** (Compatibility Support Module)
+3. Disable **Secure Boot** if needed
+4. Save and reboot
 
-```sh
-git submodule update --init --recursive
-```
+💡 **Tip**: Some systems call this "Other OS" or "BIOS/UEFI Boot Mode"
+
+## 🤝 Contributing
+
+We welcome contributions! Please see [DEVELOPMENT.md](DEVELOPMENT.md) for:
+- Setting up your development environment
+- Code style guidelines
+- Testing procedures
+- Pull request process
+
+### Quick Contribution Guide
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/amazing-feature`
+3. Make your changes
+4. Run tests: `cargo test`
+5. Format code: `cargo fmt`
+6. Check lints: `cargo clippy`
+7. Commit: `git commit -m "feat: add amazing feature"`
+8. Push: `git push origin feature/amazing-feature`
+9. Open a Pull Request
+
+Use [conventional commits](https://www.conventionalcommits.org/):
+- `feat:` — New feature
+- `fix:` — Bug fix
+- `docs:` — Documentation
+- `refactor:` — Code refactoring
+- `test:` — Adding tests
+- `chore:` — Build system, dependencies
+
+## 📖 Additional Resources
+
+- **[OSDev Wiki](https://wiki.osdev.org/)** — OS development reference
+- **[Writing an OS in Rust](https://os.phil-opp.com/)** — Original tutorial series
+- **[Rust Embedded Book](https://rust-embedded.github.io/book/)** — Rust for bare-metal
+- **[Intel SDM](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html)** — x86_64 architecture reference
+- **[UEFI Specification](https://uefi.org/specifications)** — UEFI boot protocol
+- **[USB Specification](https://www.usb.org/documents)** — USB and XHCI docs
+
+## 🐛 Troubleshooting
+
+### Common Issues
+
+**Blank screen after boot**
+- Check serial output for errors
+- Verify framebuffer initialization succeeded
+- Try booting in legacy BIOS/CSM mode
+
+**USB device not detected**
+- Run `lspci` command to verify XHCI controller found
+- Try different USB port
+- Check serial output for USB initialization errors
+
+**Build fails**
+- Ensure nightly Rust is installed: `rustup default nightly`
+- Install components: `rustup component add rust-src llvm-tools-preview`
+- Clean and rebuild: `cargo clean && cargo build`
+
+**Submodule errors**
+- Update submodules: `git submodule update --init --recursive --remote`
+- Check network connection
+
+For more troubleshooting, see [DEVELOPMENT.md](DEVELOPMENT.md#troubleshooting).
+
+## 📄 License
+
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- **[Philipp Oppermann](https://github.com/phil-opp)** — For the excellent "Writing an OS in Rust" tutorial series
+- **Rust Community** — For creating an amazing systems programming language
+- **Contributors** — Everyone who has contributed code, documentation, or ideas
+
+---
+
+**Made with ❤️ and Rust** | [GitHub](https://github.com/RustOS-Dev/RustOS) | [Issues](https://github.com/RustOS-Dev/RustOS/issues) | [Discussions](https://github.com/RustOS-Dev/RustOS/discussions)
