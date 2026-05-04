@@ -12,7 +12,10 @@
 set -euo pipefail
 
 DRIVE=""
+AX210_FIRMWARE_SOURCE="${RUSTOS_AX210_FIRMWARE:-}"
 PARTITION_SYNC_DELAY_SECONDS=1
+AX210_FIRMWARE_PRIMARY="iwlwifi-ty-a0-gf-a0-72.ucode"
+AX210_FIRMWARE_FALLBACK="iwlwifi-ty-a0-gf-a0-71.ucode"
 
 # ---------------------------------------------------------------------------
 # Helper functions
@@ -36,6 +39,77 @@ run_as_root() {
     fi
 }
 
+populate_rootfs_skeleton() {
+    local mount_point="$1"
+    run_as_root mkdir -p \
+        "$mount_point/bin" \
+        "$mount_point/etc" \
+        "$mount_point/home" \
+        "$mount_point/lib" \
+        "$mount_point/lib/firmware" \
+        "$mount_point/mnt" \
+        "$mount_point/mnt/c" \
+        "$mount_point/mnt/d" \
+        "$mount_point/proc" \
+        "$mount_point/sys" \
+        "$mount_point/tmp" \
+        "$mount_point/usr" \
+        "$mount_point/usr/bin" \
+        "$mount_point/var" \
+        "$mount_point/var/log"
+}
+
+provision_ax210_firmware() {
+    local mount_point="$1"
+    local source="$2"
+    local firmware_dir="$mount_point/lib/firmware"
+
+    run_as_root mkdir -p "$firmware_dir"
+
+    if [[ -z "$source" ]]; then
+        echo "AX210 firmware not provided. Expected runtime path(s):"
+        echo "  /lib/firmware/$AX210_FIRMWARE_PRIMARY"
+        echo "  /lib/firmware/$AX210_FIRMWARE_FALLBACK"
+        echo "Re-run with --ax210-firmware <file-or-dir> or set RUSTOS_AX210_FIRMWARE to copy a local blob."
+        return 0
+    fi
+
+    if [[ -d "$source" ]]; then
+        local copied=0
+        for firmware_name in "$AX210_FIRMWARE_PRIMARY" "$AX210_FIRMWARE_FALLBACK"; do
+            if [[ -f "$source/$firmware_name" ]]; then
+                run_as_root cp "$source/$firmware_name" "$firmware_dir/$firmware_name"
+                echo "Provisioned AX210 firmware: /lib/firmware/$firmware_name"
+                copied=1
+            fi
+        done
+        if [[ "$copied" -eq 1 ]]; then
+            return 0
+        fi
+        echo "Error: no AX210 firmware blobs were found in '$source'." >&2
+        echo "Expected $AX210_FIRMWARE_PRIMARY and/or $AX210_FIRMWARE_FALLBACK." >&2
+        return 1
+    fi
+
+    if [[ -f "$source" ]]; then
+        local firmware_name="${source##*/}"
+        case "$firmware_name" in
+            "$AX210_FIRMWARE_PRIMARY"|"$AX210_FIRMWARE_FALLBACK")
+                run_as_root cp "$source" "$firmware_dir/$firmware_name"
+                echo "Provisioned AX210 firmware: /lib/firmware/$firmware_name"
+                return 0
+                ;;
+            *)
+                echo "Error: AX210 firmware file must be named '$AX210_FIRMWARE_PRIMARY' or '$AX210_FIRMWARE_FALLBACK'." >&2
+                return 1
+                ;;
+        esac
+    fi
+
+    echo "Error: AX210 firmware source '$source' does not exist." >&2
+    return 1
+}
+
 # ---------------------------------------------------------------------------
 # Argument parsing
 # ---------------------------------------------------------------------------
@@ -49,19 +123,30 @@ while [[ $# -gt 0 ]]; do
             DRIVE="$2"
             shift 2
             ;;
+        --ax210-firmware)
+            if [[ -z "${2:-}" ]]; then
+                echo "Error: --ax210-firmware requires a path argument" >&2
+                exit 1
+            fi
+            AX210_FIRMWARE_SOURCE="$2"
+            shift 2
+            ;;
         -h|--help)
-            echo "Usage: $0 --drive /dev/sdX"
+            echo "Usage: $0 --drive /dev/sdX [--ax210-firmware <file-or-dir>]"
             echo
             echo "Builds a local RustOS UEFI disk image and writes it to the"
             echo "specified drive.  The drive will be COMPLETELY OVERWRITTEN."
+            echo "If AX210 firmware is provided, it is copied to /lib/firmware/"
+            echo "on the RustOS FAT32 root filesystem."
             echo
             echo "Example:"
             echo "  $0 --drive /dev/sdb"
+            echo "  $0 --drive /dev/sdb --ax210-firmware /path/to/linux-firmware"
             exit 0
             ;;
         *)
             echo "Unknown argument: $1" >&2
-            echo "Usage: $0 --drive /dev/sdX" >&2
+            echo "Usage: $0 --drive /dev/sdX [--ax210-firmware <file-or-dir>]" >&2
             exit 1
             ;;
     esac
@@ -69,7 +154,7 @@ done
 
 if [[ -z "$DRIVE" ]]; then
     echo "Error: --drive is required." >&2
-    echo "Usage: $0 --drive /dev/sdX" >&2
+    echo "Usage: $0 --drive /dev/sdX [--ax210-firmware <file-or-dir>]" >&2
     exit 1
 fi
 
@@ -233,41 +318,10 @@ run_as_root mkfs.fat -F 32 -n RUSTOS_ROOT "$STORAGE_PART"
 # that the kernel has a proper persistent root from first boot.
 echo "Populating FAT32 storage partition with initial directory skeleton..."
 MOUNT_TMP=$(mktemp -d)
-if command -v sudo &>/dev/null && [[ "$(id -u)" -ne 0 ]]; then
-    sudo mount -t vfat "$STORAGE_PART" "$MOUNT_TMP"
-    sudo mkdir -p \
-        "$MOUNT_TMP/bin"  \
-        "$MOUNT_TMP/etc"  \
-        "$MOUNT_TMP/home" \
-        "$MOUNT_TMP/mnt"  \
-        "$MOUNT_TMP/mnt/c" \
-        "$MOUNT_TMP/mnt/d" \
-        "$MOUNT_TMP/proc" \
-        "$MOUNT_TMP/sys"  \
-        "$MOUNT_TMP/tmp"  \
-        "$MOUNT_TMP/usr"  \
-        "$MOUNT_TMP/usr/bin" \
-        "$MOUNT_TMP/var"  \
-        "$MOUNT_TMP/var/log"
-    sudo umount "$MOUNT_TMP"
-else
-    mount -t vfat "$STORAGE_PART" "$MOUNT_TMP"
-    mkdir -p \
-        "$MOUNT_TMP/bin"  \
-        "$MOUNT_TMP/etc"  \
-        "$MOUNT_TMP/home" \
-        "$MOUNT_TMP/mnt"  \
-        "$MOUNT_TMP/mnt/c" \
-        "$MOUNT_TMP/mnt/d" \
-        "$MOUNT_TMP/proc" \
-        "$MOUNT_TMP/sys"  \
-        "$MOUNT_TMP/tmp"  \
-        "$MOUNT_TMP/usr"  \
-        "$MOUNT_TMP/usr/bin" \
-        "$MOUNT_TMP/var"  \
-        "$MOUNT_TMP/var/log"
-    umount "$MOUNT_TMP"
-fi
+run_as_root mount -t vfat "$STORAGE_PART" "$MOUNT_TMP"
+populate_rootfs_skeleton "$MOUNT_TMP"
+provision_ax210_firmware "$MOUNT_TMP" "$AX210_FIRMWARE_SOURCE"
+run_as_root umount "$MOUNT_TMP"
 rmdir "$MOUNT_TMP"
 
 echo

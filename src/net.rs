@@ -6,7 +6,7 @@
 //! - TCP/IP stack (ARP, IP, ICMP, UDP, TCP, DHCP)
 //! - Management binaries (/bin/wifi, /bin/ping, /bin/ifconfig, /bin/netstat)
 
-use alloc::boxed::Box;
+use alloc::{boxed::Box, format};
 use spin::Mutex;
 
 use tcp_ip::driver::DriverError;
@@ -36,7 +36,7 @@ fn init_state_message(state: WifiInitState) -> &'static str {
             DriverError::DeviceNotFound => "wlan0: AX210 device not found during driver init",
             DriverError::InvalidBar => "wlan0: AX210 BAR is invalid or unusable",
             DriverError::FirmwareMissing => {
-                "wlan0: AX210 firmware file is missing; place iwlwifi-ty-a0-gf-a0-72.ucode or ...71.ucode under /lib/firmware"
+                "wlan0: AX210 firmware file is missing; install /lib/firmware/iwlwifi-ty-a0-gf-a0-72.ucode or /lib/firmware/iwlwifi-ty-a0-gf-a0-71.ucode"
             }
             DriverError::FirmwareFault => "wlan0: AX210 firmware setup failed",
             DriverError::HardwareReadyTimeout => {
@@ -46,7 +46,10 @@ fn init_state_message(state: WifiInitState) -> &'static str {
                 "wlan0: AX210 timed out waiting for the MAC clock during initialization"
             }
             DriverError::FirmwareAliveTimeout => {
-                "wlan0: AX210 firmware did not come alive; the current driver still uses a stub firmware path and cannot start the real radio yet"
+                "wlan0: AX210 firmware did not deliver an ALIVE notification on the boot RX ring"
+            }
+            DriverError::FirmwareAliveInvalid => {
+                "wlan0: AX210 firmware delivered an ALIVE notification, but its runtime state was malformed or reported failure"
             }
             DriverError::HardwareFault => "wlan0: AX210 hardware reported a fault",
             DriverError::BufferFull => "wlan0: AX210 driver buffer is full",
@@ -72,18 +75,34 @@ fn ax210_load_firmware(primary: &str, fallback: &str) -> Result<&'static [u8], D
 
     let mut guard = crate::vfs::VFS.lock();
     let vfs = guard.as_mut().ok_or(DriverError::FirmwareMissing)?;
+    let primary_path = format!("/lib/firmware/{}", primary);
+    let fallback_path = format!("/lib/firmware/{}", fallback);
 
-    let bytes = match vfs.read_file(primary) {
+    let bytes = match vfs.read_file(&primary_path) {
         Ok(bytes) => {
-            crate::serial_println!("[net] loaded AX210 firmware from {}", primary);
+            crate::serial_println!("[net] loaded AX210 firmware from {}", primary_path);
             bytes
         }
-        Err(_) => match vfs.read_file(fallback) {
+        Err(primary_err) => match vfs.read_file(&fallback_path) {
             Ok(bytes) => {
-                crate::serial_println!("[net] loaded AX210 firmware from {}", fallback);
+                crate::serial_println!("[net] loaded AX210 firmware from {}", fallback_path);
                 bytes
             }
-            Err(_) => return Err(DriverError::FirmwareMissing),
+            Err(fallback_err) => {
+                if !vfs.exists("/lib/firmware") {
+                    crate::serial_println!(
+                        "[net] AX210 firmware directory /lib/firmware is missing on the root filesystem"
+                    );
+                }
+                crate::serial_println!(
+                    "[net] AX210 firmware not found (checked {}: {}, {}: {})",
+                    primary_path,
+                    primary_err,
+                    fallback_path,
+                    fallback_err
+                );
+                return Err(DriverError::FirmwareMissing);
+            }
         },
     };
 

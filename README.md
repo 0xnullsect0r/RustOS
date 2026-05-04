@@ -90,6 +90,9 @@ cargo bootimage
 # Using the installer script (recommended)
 ./write_to_drive.sh --drive /dev/sdX
 
+# Optional: copy locally-downloaded AX210 firmware during install
+./write_to_drive.sh --drive /dev/sdX --ax210-firmware /path/to/linux-firmware
+
 # Or manually with dd
 sudo dd if=target/x86_64-rustos/debug/bootimage-rustos.bin of=/dev/sdX bs=4M status=progress
 sync
@@ -458,11 +461,24 @@ GitHub Actions will:
 **Method 1: Installer Script**
 ```bash
 ./write_to_drive.sh --drive /dev/sdX
+./write_to_drive.sh --drive /dev/sdX --ax210-firmware /path/to/linux-firmware
 ```
 
 Creates:
 - Partition 1: Boot/EFI partition
 - Partition 2: FAT32 root filesystem (RUSTOS_ROOT)
+- `/lib/firmware/` on `RUSTOS_ROOT` for optional AX210 firmware blobs
+
+To enable AX210 firmware loading on real hardware without committing Intel's
+proprietary blob to this repository, place one of these files on partition 2:
+
+- `/lib/firmware/iwlwifi-ty-a0-gf-a0-72.ucode`
+- `/lib/firmware/iwlwifi-ty-a0-gf-a0-71.ucode`
+
+`write_to_drive.sh` always creates `/lib/firmware/`, and `--ax210-firmware`
+accepts either a single firmware file or a directory containing the expected
+filename(s). If you flash an image manually with `dd` or Rufus, mount the
+`RUSTOS_ROOT` partition afterwards and copy the firmware into that directory.
 
 **Method 2: Manual (Linux/macOS)**
 ```bash
