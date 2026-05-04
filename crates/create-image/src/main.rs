@@ -1,4 +1,4 @@
-use std::{env, fs, io::{Seek, SeekFrom, Write, Read}, path::PathBuf, process};
+use std::{env, fs, io::{Seek, SeekFrom, Write}, path::PathBuf, process};
 use gpt::GptConfig;
 use uuid::Uuid;
 
@@ -86,7 +86,7 @@ fn add_fat32_partition(img_path: &PathBuf) -> std::io::Result<()> {
     eprintln!("[create-image] Adding partition 2: sectors {} to {}", part_start_sector, part_end_sector);
 
     let partition = gpt::partition_types::LINUX_FS;
-    disk.add_partition("rustos-storage", part_start_sector, part_end_sector, partition)
+    disk.add_partition("rustos-storage", part_start_sector, partition, part_end_sector, None)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to add partition: {}", e)))?;
 
     disk.write()

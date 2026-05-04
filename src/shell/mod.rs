@@ -67,9 +67,18 @@ impl Shell {
 
     /// Resolve a path relative to the shell's current working directory.
     pub fn resolve_path(&self, path: &str) -> String {
-        if path.starts_with('/') {
-            crate::vfs::RamFs::pub_normalize(path)
-        } else if path.is_empty() || path == "." {
+        // Handle home directory shortcut (~)
+        let resolved_home = if path == "~" {
+            "/".to_string()
+        } else if path.starts_with("~/") {
+            path[1..].to_string() // Remove ~ but keep /
+        } else {
+            path.to_string()
+        };
+        
+        if resolved_home.starts_with('/') {
+            crate::vfs::RamFs::pub_normalize(&resolved_home)
+        } else if resolved_home.is_empty() || resolved_home == "." {
             self.cwd.clone()
         } else {
             let base = if self.cwd == "/" {
@@ -77,7 +86,7 @@ impl Shell {
             } else {
                 alloc::format!("{}/", self.cwd)
             };
-            crate::vfs::RamFs::pub_normalize(&alloc::format!("{}{}", base, path))
+            crate::vfs::RamFs::pub_normalize(&alloc::format!("{}{}", base, resolved_home))
         }
     }
 

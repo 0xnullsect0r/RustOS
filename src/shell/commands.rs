@@ -269,7 +269,11 @@ fn cmd_color(shell: &mut Shell, args: &[&str]) {
 // pwd — matches Linux pwd
 // ---------------------------------------------------------------------------
 
-fn cmd_pwd(shell: &Shell, _args: &[&str]) {
+fn cmd_pwd(shell: &Shell, args: &[&str]) {
+    // Parse flags: -L (logical, default), -P (physical, resolved symlinks)
+    // In RustOS, there are no symlinks, so both behave identically
+    let _logical = !args.contains(&"-P");
+    let _physical = args.contains(&"-P");
     crate::println!("{}", shell.cwd);
 }
 
@@ -669,9 +673,9 @@ fn cmd_cat(shell: &mut Shell, args: &[&str]) {
                         if number_lines {
                             for (i, line) in s.lines().enumerate() {
                                 if show_ends {
-                                    crate::println!("{:6}  {}$", i + 1, line);
+                                    crate::println!("{:6}\t{}$", i + 1, line);
                                 } else {
-                                    crate::println!("{:6}  {}", i + 1, line);
+                                    crate::println!("{:6}\t{}", i + 1, line);
                                 }
                             }
                         } else if show_ends {
