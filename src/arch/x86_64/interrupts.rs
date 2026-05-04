@@ -40,7 +40,13 @@ lazy_static! {
         idt[InterruptIndex::Timer.as_usize()].set_handler_fn(timer_interrupt_handler);
         idt[InterruptIndex::Keyboard.as_usize()].set_handler_fn(keyboard_interrupt_handler);
         // int 0x80 — syscall gate used by processes running on RustOS
-        idt[0x80].set_handler_fn(crate::syscall::syscall_handler);
+        // syscall_handler is a #[naked] extern "C" function, not extern "x86-interrupt",
+        // so we register it by address instead of set_handler_fn.
+        unsafe {
+            idt[0x80].set_handler_addr(x86_64::VirtAddr::new(
+                crate::syscall::syscall_handler as *const () as u64,
+            ));
+        }
         idt
     };
 }

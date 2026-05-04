@@ -148,7 +148,7 @@ dependencies = [
  "pc-keyboard",
  "pic8259",
  "spin 0.5.2",
- "uart_16550",
+ "tcp-ip",
  "volatile 0.2.7",
  "x86_64",
 ]
@@ -187,13 +187,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "uart_16550"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22ee77075ecbc5e1c9b1236d03ff013dd77c7bb06da181c5c44f1f39b6cf3ff2"
-dependencies = [
- "bitflags",
-]
+name = "tcp-ip"
+version = "0.1.0"
 
 [[package]]
 name = "volatile"

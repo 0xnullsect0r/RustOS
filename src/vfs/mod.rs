@@ -1,7 +1,7 @@
 //! Virtual File System (VFS) abstraction.
 //!
 //! The VFS layer provides:
-//! - An in-memory `RamFs` for the default `/` filesystem
+//! - An in-memory `RamFs` fallback for `/` when persistent storage is absent
 //! - A `Filesystem` trait that external filesystems (e.g. FAT32 on USB) implement
 //! - A global `MOUNTS` table routing paths to the correct filesystem
 
@@ -125,6 +125,10 @@ pub struct Fat32Mount(pub Fat32Fs);
 
 impl Filesystem for Fat32Mount {
     fn list_dir(&mut self, path: &str) -> VfsResult<Vec<DirEntry>> {
+        let norm = normalize(path);
+        if norm == "/bin" {
+            return Ok(virtual_bin_entries());
+        }
         let entries = self.0.list(path).ok_or(VfsError::NotFound)?;
         Ok(entries
             .into_iter()
@@ -141,20 +145,21 @@ impl Filesystem for Fat32Mount {
     fn read_file(&mut self, path: &str) -> VfsResult<Vec<u8>> {
         self.0.read_file(path).ok_or(VfsError::IoError)
     }
-    fn write_file(&mut self, _: &str, _: &[u8]) -> VfsResult<()> {
-        Err(VfsError::ReadOnly)
+    fn write_file(&mut self, path: &str, data: &[u8]) -> VfsResult<()> {
+        self.0.write_file(path, data).ok_or(VfsError::IoError)
     }
-    fn mkdir(&mut self, _: &str) -> VfsResult<()> {
-        Err(VfsError::ReadOnly)
+    fn mkdir(&mut self, path: &str) -> VfsResult<()> {
+        self.0.mkdir(path).ok_or(VfsError::IoError)
     }
-    fn remove(&mut self, _: &str) -> VfsResult<()> {
-        Err(VfsError::ReadOnly)
+    fn remove(&mut self, path: &str) -> VfsResult<()> {
+        self.0.remove(path).ok_or(VfsError::IoError)
     }
-    fn rename(&mut self, _: &str, _: &str) -> VfsResult<()> {
-        Err(VfsError::ReadOnly)
+    fn rename(&mut self, src: &str, dst: &str) -> VfsResult<()> {
+        self.0.rename(src, dst).ok_or(VfsError::IoError)
     }
-    fn copy(&mut self, _: &str, _: &str) -> VfsResult<()> {
-        Err(VfsError::ReadOnly)
+    fn copy(&mut self, src: &str, dst: &str) -> VfsResult<()> {
+        let data = self.0.read_file(src).ok_or(VfsError::IoError)?;
+        self.0.write_file(dst, &data).ok_or(VfsError::IoError)
     }
     fn is_dir(&mut self, path: &str) -> bool {
         self.0.list(path).is_some()
@@ -177,6 +182,7 @@ struct MountPoint {
 /// Global VFS state: the root filesystem + any additional mount points.
 pub struct Vfs {
     root: Box<dyn Filesystem>,
+    root_name: String,
     mounts: Vec<MountPoint>,
 }
 
@@ -184,6 +190,7 @@ impl Vfs {
     pub fn new() -> Self {
         Vfs {
             root: Box::new(RamFs::new()),
+            root_name: String::from("ramfs"),
             mounts: Vec::new(),
         }
     }
@@ -197,8 +204,13 @@ impl Default for Vfs {
 
 impl Vfs {
     /// Replace the root filesystem mounted at `/`.
-    pub fn set_root(&mut self, fs: Box<dyn Filesystem>) {
+    pub fn set_root(&mut self, fs: Box<dyn Filesystem>, name: &str) {
         self.root = fs;
+        self.root_name = name.to_string();
+    }
+
+    pub fn root_name(&self) -> &str {
+        &self.root_name
     }
 
     /// Mount `fs` at `mount_path` (e.g. "/usb").
@@ -228,7 +240,7 @@ impl Vfs {
     }
 
     /// Route a path: if it falls under a mount point prefix, use that filesystem;
-    /// otherwise use the root RamFs.
+    /// otherwise use the current root filesystem.
     fn route(&mut self, path: &str) -> (&mut dyn Filesystem, String) {
         let norm = normalize(path);
         // Find the most-specific mount (longest prefix match)
@@ -258,11 +270,35 @@ impl Vfs {
     }
 
     pub fn list_dir(&mut self, path: &str) -> VfsResult<Vec<DirEntry>> {
+        let norm = normalize(path);
+        if norm == "/bin" {
+            let mut entries = virtual_bin_entries();
+            // Also include any real files stored in the root FS under /bin/
+            // (e.g. ELF binaries installed by net_bins::install).
+            if let Ok(real) = self.root.list_dir("/bin") {
+                for e in real {
+                    if !entries.iter().any(|v| v.name == e.name) {
+                        entries.push(e);
+                    }
+                }
+            }
+            return Ok(entries);
+        }
         let (fs, rel) = self.route(path);
-        fs.list_dir(&rel)
+        let mut entries = fs.list_dir(&rel)?;
+        if norm == "/" && !entries.iter().any(|entry| entry.name == "bin") {
+            entries.push(DirEntry {
+                name: String::from("bin"),
+                node_type: NodeType::Directory,
+            });
+        }
+        Ok(entries)
     }
 
     pub fn read_file(&mut self, path: &str) -> VfsResult<Vec<u8>> {
+        if crate::bin_commands::is_virtual_bin_path(&normalize(path)).is_some() {
+            return Err(VfsError::ReadOnly);
+        }
         let (fs, rel) = self.route(path);
         fs.read_file(&rel)
     }
@@ -342,11 +378,18 @@ impl Vfs {
     }
 
     pub fn is_dir(&mut self, path: &str) -> bool {
+        if normalize(path) == "/bin" {
+            return true;
+        }
         let (fs, rel) = self.route(path);
         fs.is_dir(&rel)
     }
 
     pub fn exists(&mut self, path: &str) -> bool {
+        let norm = normalize(path);
+        if norm == "/bin" || crate::bin_commands::is_virtual_bin_path(&norm).is_some() {
+            return true;
+        }
         let (fs, rel) = self.route(path);
         fs.exists(&rel)
     }
@@ -354,10 +397,31 @@ impl Vfs {
     pub fn list_mounts(&self) -> Vec<String> {
         self.mounts.iter().map(|m| m.prefix.clone()).collect()
     }
+
+    /// Unmount the filesystem at `mount_path`. Returns true if it was mounted.
+    pub fn umount(&mut self, mount_path: &str) -> bool {
+        let norm = normalize(mount_path);
+        if let Some(pos) = self.mounts.iter().position(|m| m.prefix == norm) {
+            self.mounts.remove(pos);
+            true
+        } else {
+            false
+        }
+    }
 }
 
 fn normalize(path: &str) -> String {
     crate::vfs::ramfs::RamFs::pub_normalize(path)
+}
+
+fn virtual_bin_entries() -> Vec<DirEntry> {
+    crate::bin_commands::virtual_bin_commands()
+        .iter()
+        .map(|name| DirEntry {
+            name: (*name).to_string(),
+            node_type: NodeType::File,
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------

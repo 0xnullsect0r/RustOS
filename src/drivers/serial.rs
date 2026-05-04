@@ -1,24 +1,92 @@
-use lazy_static::lazy_static;
+use core::fmt::{self, Write};
+use core::sync::atomic::{AtomicBool, Ordering};
 use spin::Mutex;
-use uart_16550::{Config, Uart16550Tty, backend::PioBackend};
+use x86_64::instructions::port::Port;
 
-lazy_static! {
-    pub static ref SERIAL1: Mutex<Uart16550Tty<PioBackend>> = Mutex::new(unsafe {
-        Uart16550Tty::new_port(0x3F8, Config::default()).expect("failed to initialize UART")
-    });
+const COM1_PORT: u16 = 0x3f8;
+const DATA_OFFSET: u16 = 0;
+const INTERRUPT_ENABLE_OFFSET: u16 = 1;
+const FIFO_CONTROL_OFFSET: u16 = 2;
+const LINE_CONTROL_OFFSET: u16 = 3;
+const MODEM_CONTROL_OFFSET: u16 = 4;
+const LINE_STATUS_OFFSET: u16 = 5;
+const TRANSMIT_EMPTY_BIT: u8 = 0x20;
+// Bounded COM1 waits use a tiny best-effort spin window: enough for normal UARTs
+// to become ready, but short enough not to stall boot on laptops without COM1.
+const SERIAL_SPIN_LIMIT: usize = 10_000;
+
+static SERIAL_LOCK: Mutex<()> = Mutex::new(());
+static SERIAL_INITIALIZED: AtomicBool = AtomicBool::new(false);
+
+/// Best-effort COM1 initialization.
+///
+/// Modern laptops often have no legacy UART at COM1. Port I/O is still safe in
+/// ring 0, but probing libraries can fail or block on absent hardware. Keep this
+/// path non-panicking so early boot never depends on QEMU-style serial hardware.
+pub fn init() {
+    if SERIAL_INITIALIZED.swap(true, Ordering::AcqRel) {
+        return;
+    }
+
+    unsafe {
+        let mut data = Port::<u8>::new(COM1_PORT + DATA_OFFSET);
+        let mut interrupt_enable = Port::<u8>::new(COM1_PORT + INTERRUPT_ENABLE_OFFSET);
+        let mut fifo_control = Port::<u8>::new(COM1_PORT + FIFO_CONTROL_OFFSET);
+        let mut line_control = Port::<u8>::new(COM1_PORT + LINE_CONTROL_OFFSET);
+        let mut modem_control = Port::<u8>::new(COM1_PORT + MODEM_CONTROL_OFFSET);
+
+        interrupt_enable.write(0x00); // Disable interrupts
+        line_control.write(0x80); // Enable DLAB
+        data.write(0x03); // 38400 baud divisor low
+        interrupt_enable.write(0x00); // divisor high
+        line_control.write(0x03); // 8N1
+        fifo_control.write(0xc7); // Enable FIFO
+        modem_control.write(0x0b); // IRQs disabled, RTS/DSR set
+    }
 }
 
 #[doc(hidden)]
 pub fn _print(args: ::core::fmt::Arguments) {
-    use core::fmt::Write;
     use x86_64::instructions::interrupts;
 
     interrupts::without_interrupts(|| {
-        SERIAL1
-            .lock()
-            .write_fmt(args)
-            .expect("Printing to serial failed");
+        let _guard = SERIAL_LOCK.lock();
+        init();
+        let _ = SerialWriter.write_fmt(args);
     });
+}
+
+struct SerialWriter;
+
+impl fmt::Write for SerialWriter {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        for byte in s.bytes() {
+            match byte {
+                b'\n' => {
+                    write_byte(b'\r');
+                    write_byte(b'\n');
+                }
+                byte => write_byte(byte),
+            }
+        }
+        Ok(())
+    }
+}
+
+fn write_byte(byte: u8) {
+    unsafe {
+        let mut line_status = Port::<u8>::new(COM1_PORT + LINE_STATUS_OFFSET);
+        for _ in 0..SERIAL_SPIN_LIMIT {
+            if line_status.read() & TRANSMIT_EMPTY_BIT != 0 {
+                break;
+            }
+            core::hint::spin_loop();
+        }
+        // If absent hardware never reports ready, still attempt the byte once.
+        // This keeps serial diagnostic output best-effort rather than blocking
+        // boot on real laptops without COM1.
+        Port::<u8>::new(COM1_PORT + DATA_OFFSET).write(byte);
+    }
 }
 
 /// Prints to the host through the serial interface.

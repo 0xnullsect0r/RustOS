@@ -1,3 +1,5 @@
+use alloc::collections::VecDeque;
+use alloc::vec::Vec;
 use bootloader_api::info::{FrameBuffer, FrameBufferInfo, PixelFormat};
 use core::fmt;
 use lazy_static::lazy_static;
@@ -12,6 +14,9 @@ const FONT_WIDTH: usize = 8;
 const FONT_HEIGHT: usize = 16;
 const CHARS_IN_FONT: usize = 95; // ASCII 32-126
 
+/// Maximum number of committed lines kept in the scrollback history.
+const SCROLLBACK_MAX: usize = 200;
+
 lazy_static! {
     pub static ref FRAMEBUFFER_WRITER: Mutex<Option<FrameBufferWriter>> = Mutex::new(None);
 }
@@ -24,6 +29,20 @@ pub struct FrameBufferWriter {
     y_pos: usize,
     foreground: Color,
     background: Color,
+
+    // ── shadow buffer (heap-backed; empty until enable_scrollback() is called) ──
+    /// CPU-side copy of the framebuffer. All pixel writes go here; a single
+    /// `flush()` blits everything to the real hardware framebuffer at once,
+    /// eliminating visible scan-line artefacts.
+    shadow: Vec<u8>,
+
+    // ── scrollback (heap-backed; None until enable_scrollback() is called) ──
+    /// Completed lines, oldest at the front.
+    scrollback: Option<VecDeque<Vec<u8>>>,
+    /// Characters on the line currently being written (not yet committed).
+    current_line: Vec<u8>,
+    /// 0 = live view.  N > 0 = screen shows content N lines above live.
+    scroll_offset: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -78,6 +97,102 @@ impl FrameBufferWriter {
             y_pos: 0,
             foreground: Color::YELLOW,
             background: Color::BLACK,
+            shadow: Vec::new(), // allocated post-heap via enable_scrollback()
+            scrollback: None,
+            current_line: Vec::new(),
+            scroll_offset: 0,
+        }
+    }
+
+    /// Enables the heap-backed scrollback buffer and shadow framebuffer.
+    /// Must be called after the global allocator is initialised (i.e. after
+    /// `allocator::init_heap`).
+    pub fn enable_scrollback(&mut self) {
+        if self.scrollback.is_none() {
+            self.scrollback = Some(VecDeque::new());
+        }
+        // Initialise the shadow buffer from the current hardware framebuffer so
+        // that the first flush() doesn't overwrite anything already on screen.
+        if self.shadow.is_empty() {
+            self.shadow = self.framebuffer.to_vec();
+        }
+    }
+
+    /// Scroll the *view* up by one text row (shows older content).
+    pub fn scroll_view_up(&mut self) {
+        let sb_len = match &self.scrollback {
+            Some(sb) => sb.len(),
+            None => return,
+        };
+        let lines_per_screen = self.lines_per_screen();
+        // total virtual lines = committed + current_line
+        let total = sb_len + 1;
+        let max_offset = total.saturating_sub(lines_per_screen);
+        if max_offset == 0 {
+            return;
+        }
+        if self.scroll_offset < max_offset {
+            self.scroll_offset += 1;
+            self.redraw_current_view();
+            self.flush();
+        }
+    }
+
+    /// Scroll the *view* down by one text row (shows newer content).
+    pub fn scroll_view_down(&mut self) {
+        if self.scroll_offset == 0 {
+            return;
+        }
+        self.scroll_offset -= 1;
+        self.redraw_current_view();
+        self.flush();
+    }
+
+    /// Repaint the framebuffer from the scrollback buffer for the current
+    /// `scroll_offset`.  When `scroll_offset == 0` the live view is restored.
+    fn redraw_current_view(&mut self) {
+        let lines_per_screen = self.lines_per_screen();
+        let chars_per_line = self.chars_per_line();
+
+        let sb_len = match &self.scrollback {
+            Some(sb) => sb.len(),
+            None => return,
+        };
+        let total = sb_len + 1; // +1 for current_line
+
+        // Which virtual lines to show:
+        //   last_excl = first index NOT shown
+        //   first     = first index shown
+        let last_excl = total.saturating_sub(self.scroll_offset);
+        let first = last_excl.saturating_sub(lines_per_screen);
+
+        // Clone the visible slice to release the borrow on `self.scrollback`
+        // before we call draw_char (which needs `&mut self`).
+        let mut display: Vec<Vec<u8>> = Vec::with_capacity(lines_per_screen);
+        {
+            let sb = match &self.scrollback {
+                Some(sb) => sb,
+                None => return,
+            };
+            for i in first..last_excl {
+                if i < sb_len {
+                    display.push(sb[i].clone());
+                } else {
+                    // i == sb_len → the in-progress current_line
+                    display.push(self.current_line.clone());
+                }
+            }
+        }
+
+        // Fast pixel clear then re-render
+        self.fill_background();
+        for (row, line) in display.iter().enumerate() {
+            for (col, &byte) in line.iter().enumerate() {
+                if col >= chars_per_line {
+                    break;
+                }
+                self.draw_char(byte, col, row);
+            }
         }
     }
 
@@ -87,39 +202,69 @@ impl FrameBufferWriter {
         self.background = background;
     }
 
-    /// Writes a single pixel at the given position.
+    // ── pixel helpers ──────────────────────────────────────────────────────
+
+    /// Write a single pixel at (x, y).
     fn write_pixel(&mut self, x: usize, y: usize, color: Color) {
         if x >= self.info.width || y >= self.info.height {
             return;
         }
-
         let pixel_offset = y * self.info.stride + x;
         let byte_offset = pixel_offset * self.info.bytes_per_pixel;
-
-        if byte_offset + self.info.bytes_per_pixel > self.framebuffer.len() {
-            return;
+        let bpp = self.info.bytes_per_pixel.min(4);
+        let end = byte_offset + bpp;
+        let bytes = self.color_to_bytes(color);
+        if self.shadow.is_empty() {
+            if end > self.framebuffer.len() {
+                return;
+            }
+            self.framebuffer[byte_offset..end].copy_from_slice(&bytes[..bpp]);
+        } else {
+            if end > self.shadow.len() {
+                return;
+            }
+            self.shadow[byte_offset..end].copy_from_slice(&bytes[..bpp]);
         }
+    }
 
-        let color_bytes = match self.info.pixel_format {
+    /// Copy the shadow buffer to the real hardware framebuffer in one shot.
+    /// No-op when the shadow buffer has not yet been allocated.
+    fn flush(&mut self) {
+        if !self.shadow.is_empty() {
+            self.framebuffer.copy_from_slice(&self.shadow);
+        }
+    }
+
+    /// Encode `color` into the framebuffer's byte order.
+    fn color_to_bytes(&self, color: Color) -> [u8; 4] {
+        match self.info.pixel_format {
             PixelFormat::Rgb => [color.r, color.g, color.b, 0],
             PixelFormat::Bgr => [color.b, color.g, color.r, 0],
             _ => [color.r, color.g, color.b, 0],
-        };
+        }
+    }
 
-        let len = self.info.bytes_per_pixel.min(4);
-        self.framebuffer[byte_offset..(len + byte_offset)]
-            .copy_from_slice(&color_bytes[..len]);
+    /// Fill the entire framebuffer with the background colour in one pass.
+    fn fill_background(&mut self) {
+        let bpp = self.info.bytes_per_pixel;
+        let bg_bytes = self.color_to_bytes(self.background);
+        if self.shadow.is_empty() {
+            for chunk in self.framebuffer.chunks_mut(bpp) {
+                chunk.copy_from_slice(&bg_bytes[..chunk.len()]);
+            }
+        } else {
+            for chunk in self.shadow.chunks_mut(bpp) {
+                chunk.copy_from_slice(&bg_bytes[..chunk.len()]);
+            }
+        }
     }
 
     /// Clears the entire screen with the background color.
     pub fn clear_screen(&mut self) {
-        for y in 0..self.info.height {
-            for x in 0..self.info.width {
-                self.write_pixel(x, y, self.background);
-            }
-        }
+        self.fill_background();
         self.x_pos = 0;
         self.y_pos = 0;
+        self.flush();
     }
 
     /// Calculates the maximum number of characters that fit on one line.
@@ -132,47 +277,52 @@ impl FrameBufferWriter {
         self.info.height / FONT_HEIGHT
     }
 
-    /// Scrolls the screen up by one line.
-    fn scroll_up(&mut self) {
-        // Copy all lines up by FONT_HEIGHT pixels
-        for y in FONT_HEIGHT..self.info.height {
-            for x in 0..self.info.width {
-                // Read pixel from current line
-                let src_offset = y * self.info.stride + x;
-                let src_byte_offset = src_offset * self.info.bytes_per_pixel;
+    /// Scrolls the screen up by one text row using a single bulk copy.
+    fn scroll_up_pixels(&mut self) {
+        let bpp = self.info.bytes_per_pixel;
+        let row_stride = self.info.stride * bpp;
+        let scroll_bytes = FONT_HEIGHT * row_stride;
+        let bg_bytes = self.color_to_bytes(self.background);
 
-                let dst_y = y - FONT_HEIGHT;
-                let dst_offset = dst_y * self.info.stride + x;
-                let dst_byte_offset = dst_offset * self.info.bytes_per_pixel;
-
-                // Copy the pixel
-                for i in 0..self.info.bytes_per_pixel {
-                    if src_byte_offset + i < self.framebuffer.len()
-                        && dst_byte_offset + i < self.framebuffer.len()
-                    {
-                        self.framebuffer[dst_byte_offset + i] =
-                            self.framebuffer[src_byte_offset + i];
-                    }
-                }
+        if self.shadow.is_empty() {
+            let fb_len = self.framebuffer.len();
+            if scroll_bytes >= fb_len {
+                return;
             }
-        }
-
-        // Clear the last line
-        let last_line_y = self.info.height - FONT_HEIGHT;
-        for y in last_line_y..self.info.height {
-            for x in 0..self.info.width {
-                self.write_pixel(x, y, self.background);
+            self.framebuffer.copy_within(scroll_bytes..fb_len, 0);
+            let clear_start = fb_len.saturating_sub(scroll_bytes);
+            for chunk in self.framebuffer[clear_start..].chunks_mut(bpp) {
+                chunk.copy_from_slice(&bg_bytes[..chunk.len()]);
+            }
+        } else {
+            let sb_len = self.shadow.len();
+            if scroll_bytes >= sb_len {
+                return;
+            }
+            self.shadow.copy_within(scroll_bytes..sb_len, 0);
+            let clear_start = sb_len.saturating_sub(scroll_bytes);
+            for chunk in self.shadow[clear_start..].chunks_mut(bpp) {
+                chunk.copy_from_slice(&bg_bytes[..chunk.len()]);
             }
         }
     }
 
     /// Moves to a new line, scrolling if necessary.
     fn newline(&mut self) {
+        // Commit the in-progress line to scrollback.
+        if let Some(ref mut sb) = self.scrollback {
+            let line = core::mem::take(&mut self.current_line);
+            if sb.len() >= SCROLLBACK_MAX {
+                sb.pop_front();
+            }
+            sb.push_back(line);
+        }
+
         self.x_pos = 0;
         self.y_pos += 1;
 
         if self.y_pos >= self.lines_per_screen() {
-            self.scroll_up();
+            self.scroll_up_pixels();
             self.y_pos = self.lines_per_screen() - 1;
         }
     }
@@ -181,6 +331,10 @@ impl FrameBufferWriter {
     fn backspace(&mut self) {
         if self.x_pos > 0 {
             self.x_pos -= 1;
+            // Pop from current_line too, if tracking.
+            if self.scrollback.is_some() {
+                self.current_line.pop();
+            }
             // Clear the character at the current position
             self.draw_char(b' ', self.x_pos, self.y_pos);
         }
@@ -225,6 +379,12 @@ impl FrameBufferWriter {
 
     /// Writes a byte to the framebuffer.
     pub fn write_byte(&mut self, byte: u8) {
+        // Any output jumps back to the live view so the user sees new content.
+        if self.scroll_offset > 0 {
+            self.scroll_offset = 0;
+            self.redraw_current_view();
+        }
+
         match byte {
             b'\n' => self.newline(),
             0x08 => self.backspace(), // Backspace
@@ -234,6 +394,9 @@ impl FrameBufferWriter {
                 }
 
                 self.draw_char(byte, self.x_pos, self.y_pos);
+                if self.scrollback.is_some() {
+                    self.current_line.push(byte);
+                }
                 self.x_pos += 1;
             }
         }
@@ -247,6 +410,9 @@ impl FrameBufferWriter {
                 _ => self.write_byte(0xfe), // Unprintable character
             }
         }
+        // Blit all accumulated pixel changes to the hardware framebuffer in one
+        // shot so the entire string appears atomically (no visible scan-line).
+        self.flush();
     }
 }
 
@@ -277,7 +443,39 @@ pub fn _print(args: fmt::Arguments) {
 /// This must be called exactly once during kernel initialization.
 pub unsafe fn init(framebuffer: FrameBuffer) {
     unsafe {
-        let writer = FrameBufferWriter::new(framebuffer);
+        let mut writer = FrameBufferWriter::new(framebuffer);
+        writer.clear_screen();
         *FRAMEBUFFER_WRITER.lock() = Some(writer);
     }
+}
+
+/// Enable the heap-backed scrollback buffer.  Must be called after the
+/// global allocator is ready.
+pub fn enable_scrollback() {
+    use x86_64::instructions::interrupts;
+    interrupts::without_interrupts(|| {
+        if let Some(writer) = FRAMEBUFFER_WRITER.lock().as_mut() {
+            writer.enable_scrollback();
+        }
+    });
+}
+
+/// Scroll the terminal view up by one text row (Arrow Up).
+pub fn scroll_view_up() {
+    use x86_64::instructions::interrupts;
+    interrupts::without_interrupts(|| {
+        if let Some(writer) = FRAMEBUFFER_WRITER.lock().as_mut() {
+            writer.scroll_view_up();
+        }
+    });
+}
+
+/// Scroll the terminal view down by one text row (Arrow Down).
+pub fn scroll_view_down() {
+    use x86_64::instructions::interrupts;
+    interrupts::without_interrupts(|| {
+        if let Some(writer) = FRAMEBUFFER_WRITER.lock().as_mut() {
+            writer.scroll_view_down();
+        }
+    });
 }

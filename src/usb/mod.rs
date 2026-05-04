@@ -11,6 +11,7 @@ use spin::Mutex;
 /// A block device that can read 512-byte sectors.
 pub trait BlockDevice: Send {
     fn read_sectors(&mut self, lba: u64, count: u16) -> Option<alloc::vec::Vec<u8>>;
+    fn write_sectors(&mut self, lba: u64, data: &[u8]) -> Option<()>;
     fn sector_count(&self) -> u64;
 }
 
@@ -41,6 +42,13 @@ impl BlockDevice for XhciBlockDevice {
             .lock()
             .as_mut()?
             .read_sectors_dev(self.dev_idx, lba, count)
+    }
+
+    fn write_sectors(&mut self, lba: u64, data: &[u8]) -> Option<()> {
+        USB_XHCI
+            .lock()
+            .as_mut()?
+            .write_sectors_dev(self.dev_idx, lba, data)
     }
 
     fn sector_count(&self) -> u64 {
@@ -80,15 +88,28 @@ impl BlockDevice for PartitionBlockDevice {
             .read_sectors(self.start_lba.checked_add(lba)?, count)
     }
 
+    fn write_sectors(&mut self, lba: u64, data: &[u8]) -> Option<()> {
+        if !data.len().is_multiple_of(512) {
+            return None;
+        }
+        let count = (data.len() / 512) as u64;
+        let end = lba.checked_add(count)?;
+        if end > self.sector_count {
+            return None;
+        }
+        self.inner
+            .write_sectors(self.start_lba.checked_add(lba)?, data)
+    }
+
     fn sector_count(&self) -> u64 {
         self.sector_count
     }
 }
 
 #[derive(Clone, Copy)]
-struct PartitionInfo {
-    start_lba: u64,
-    sector_count: u64,
+pub struct PartitionInfo {
+    pub start_lba: u64,
+    pub sector_count: u64,
 }
 
 fn read_u32_le(buf: &[u8], off: usize) -> Option<u32> {
@@ -117,6 +138,11 @@ fn read_u64_le(buf: &[u8], off: usize) -> Option<u64> {
         buf[off + 6],
         buf[off + 7],
     ]))
+}
+
+/// Public wrapper around `gpt_partitions_for_device` for use in shell mount command.
+pub fn gpt_partitions_for_device_pub(dev_idx: usize) -> alloc::vec::Vec<PartitionInfo> {
+    gpt_partitions_for_device(dev_idx)
 }
 
 fn gpt_partitions_for_device(dev_idx: usize) -> alloc::vec::Vec<PartitionInfo> {
@@ -209,7 +235,10 @@ pub fn mount_boot_storage_root() -> bool {
     let Some(vfs) = vfs.as_mut() else {
         return false;
     };
-    vfs.set_root(Box::new(crate::vfs::Fat32Mount(fat32)));
+    vfs.set_root(
+        Box::new(crate::vfs::Fat32Mount(fat32)),
+        "fat32 RUSTOS_ROOT persistent",
+    );
     crate::println!("[usb] mounted device0 partition2 FAT32 as root filesystem '/'");
     true
 }

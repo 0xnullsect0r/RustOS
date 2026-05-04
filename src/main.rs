@@ -26,20 +26,27 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     use rustos::memory::{self, BootInfoFrameAllocator};
     use x86_64::VirtAddr;
 
-    rustos::init();
+    // Real firmware may leave IF set. Keep hardware IRQs off until RustOS has
+    // loaded its own IDT and initialized every interrupt handler dependency.
+    x86_64::instructions::interrupts::disable();
 
-    // Initialize framebuffer early if available (before println!)
+    // Take over the bootloader-provided framebuffer before any normal console
+    // output. On real UEFI laptops, legacy VGA and COM1 serial hardware may be
+    // absent, so the GOP framebuffer is the first reliable kernel diagnostic.
     if let Some(framebuffer) = boot_info.framebuffer.take() {
-        rustos::serial_println!("[kernel] Framebuffer available, initializing...");
         unsafe {
             rustos::drivers::framebuffer::init(framebuffer);
         }
-        rustos::serial_println!("[kernel] Framebuffer initialized successfully");
-        // Clear screen and show boot message
         println!("\n=== RustOS Kernel Initializing ===\n");
+        println!("[kernel] UEFI framebuffer initialized");
     } else {
-        rustos::serial_println!("[kernel] No framebuffer available, using VGA fallback");
+        rustos::drivers::serial::init();
+        rustos::serial_println!("[kernel] No framebuffer available, using serial/VGA fallback");
     }
+
+    // Load GDT/IDT and program the PIC now, but do not enable interrupts until
+    // memory, heap, VFS, USB probing, and the keyboard queue are initialized.
+    rustos::init_without_interrupts();
 
     let phys_mem_offset = VirtAddr::new(
         boot_info
@@ -72,15 +79,26 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 
     // Initialise VFS
     rustos::vfs::init();
-    install_rsh_binary();
+
+    // Enable the heap-backed terminal scrollback buffer now that the allocator
+    // is ready.  Arrow Up/Down will scroll through terminal history.
+    rustos::drivers::framebuffer::enable_scrollback();
+
+    // Install embedded tcp-ip management ELF binaries (/bin/wifi etc.).
+    // This must happen after VFS init and heap init.
+    rustos::net_bins::install();
 
     // Probe PCI for XHCI and mount USB FAT32
+    rustos::net::init();
     init_usb_storage();
+    init_network();
     rustos::task::keyboard::init();
+    rustos::enable_interrupts();
 
     #[cfg(test)]
     test_main();
 
+    // This enters the interactive rsh shell loop and never returns.
     launch_rsh();
 }
 
@@ -121,60 +139,94 @@ fn init_usb_storage() {
 
     if !rustos::usb::mount_boot_storage_root() {
         rustos::serial_println!("[usb] no boot storage partition mounted as root");
+        println!("[usb] WARNING: persistent RUSTOS_ROOT was not mounted; / is ramfs");
     }
 
     // Mount all found devices under /usb* (device 0 → /usb, device 1 → /usb1, …).
     rustos::usb::mount_storage_devices(0);
 }
 
-fn install_rsh_binary() {
-    let rsh = include_bytes!(env!("RSH_ELF_PATH"));
-    let mut guard = rustos::vfs::VFS.lock();
-    let Some(vfs) = guard.as_mut() else {
-        println!("[init] VFS not initialized; cannot install /bin/rsh");
-        return;
-    };
-    match vfs.mkdir("/bin") {
-        Ok(()) | Err(rustos::vfs::VfsError::AlreadyExists) => {}
-        Err(e) => {
-            println!("[init] failed to create /bin: {}", e);
+/// Locate the AX210 on the PCI bus, enable Bus Master, map BAR0 via the
+/// physical memory offset, and hand the virtual address to the tcp-ip driver.
+fn init_network() {
+    use rustos::pci;
+    use core::sync::atomic::Ordering;
+
+    let devices = pci::enumerate();
+    let dev = match pci::find_ax210(&devices) {
+        Some(d) => d,
+        None => {
+            rustos::serial_println!("[net] no AX210-family device found");
             return;
         }
+    };
+
+    rustos::serial_println!(
+        "[net] AX210 found: {:04x}:{:04x} at {:02x}:{:02x}.{}",
+        dev.vendor_id, dev.device_id, dev.bus, dev.dev, dev.func
+    );
+
+    pci::enable_bus_master(dev.bus, dev.dev, dev.func);
+
+    let bar0_phys = dev.mmio_base(0);
+    if bar0_phys == 0 {
+        rustos::serial_println!("[net] AX210 BAR0 is zero — not assigned by firmware");
+        return;
     }
-    if let Err(e) = vfs.write_file("/bin/rsh", rsh) {
-        println!("[init] failed to install /bin/rsh: {}", e);
+
+    // Physical memory is linearly mapped at PHYS_MEM_OFFSET.
+    let phys_offset = rustos::memory::PHYS_MEM_OFFSET.load(Ordering::Relaxed);
+    let bar0_virt = phys_offset + bar0_phys;
+
+    rustos::serial_println!(
+        "[net] AX210 BAR0 phys=0x{:x} virt=0x{:x}", bar0_phys, bar0_virt
+    );
+
+    unsafe {
+        tcp_ip::kernel::init(bar0_virt);
+    }
+
+    if tcp_ip::kernel::is_active() {
+        rustos::serial_println!("[net] tcp-ip driver active");
+    } else {
+        rustos::serial_println!(
+            "[net] tcp-ip driver init failed — check NIC_READY timeout or missing firmware"
+        );
     }
 }
 
-/// Launches `/bin/rsh` as the init shell process and restarts it on exit.
+/// Runs the default rsh-compatible shell using the framebuffer output.
 fn launch_rsh() -> ! {
-    let embedded_rsh = include_bytes!(env!("RSH_ELF_PATH"));
-    rustos::serial_println!("[init] Launching /bin/rsh...");
-    println!("RustOS v{} — launching /bin/rsh", env!("CARGO_PKG_VERSION"));
+    rustos::serial_println!("[init] Starting /bin/rsh...");
+    println!("\n=== RustOS rsh ===");
+    println!("Type 'help' for available commands\n");
+
+    let mut shell = rustos::shell::Shell::rsh();
+    shell.print_prompt();
+
     loop {
-        let from_vfs = {
-            let mut guard = rustos::vfs::VFS.lock();
-            let Some(vfs) = guard.as_mut() else {
-                println!("[init] VFS not initialized");
-                rustos::hlt_loop();
-            };
-            vfs.read_file("/bin/rsh")
-        };
-        let data = match from_vfs {
-            Ok(d) => d,
-            Err(e) => {
-                println!(
-                    "[init] /bin/rsh missing in filesystem ({}), using embedded fallback",
-                    e
-                );
-                embedded_rsh.to_vec()
+        // Wait for keyboard input
+        match rustos::task::keyboard::read_input_event() {
+            Some(rustos::task::keyboard::InputEvent::Char(byte)) => {
+                shell.handle_char(byte as char);
             }
-        };
-        match rustos::process::exec(&data) {
-            Ok(code) => println!("[init] /bin/rsh exited with code {}", code),
-            Err(e) => println!("[init] /bin/rsh failed to start: {}", e),
+            Some(rustos::task::keyboard::InputEvent::ArrowUp) => {
+                rustos::drivers::framebuffer::scroll_view_up();
+            }
+            Some(rustos::task::keyboard::InputEvent::ArrowDown) => {
+                rustos::drivers::framebuffer::scroll_view_down();
+            }
+            None => {
+                if rustos::task::keyboard::interrupt_input_observed() {
+                    x86_64::instructions::hlt();
+                } else {
+                    // Before seeing any IRQ1 traffic, do not halt: some real laptops
+                    // expose PS/2-compatible keyboard data only through polling after
+                    // UEFI handoff. Once an IRQ arrives, the branch above can halt.
+                    core::hint::spin_loop();
+                }
+            }
         }
-        println!("[init] restarting /bin/rsh");
     }
 }
 

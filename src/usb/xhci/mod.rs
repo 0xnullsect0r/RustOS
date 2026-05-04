@@ -15,8 +15,11 @@ pub mod trb;
 use crate::memory::{dma_alloc, map_mmio_region};
 use crate::pci::PciDevice;
 use alloc::vec::Vec;
+use core::sync::atomic::{AtomicU32, Ordering};
 use ring::{CommandRing, EventRing, TransferRing};
 use trb::*;
+
+static SCSI_TAG: AtomicU32 = AtomicU32::new(1);
 
 // ---------------------------------------------------------------------------
 // XHCI register offsets (all relative to MMIO BAR0)
@@ -412,10 +415,12 @@ impl Xhci {
             "port reset",
         );
 
-        // Clear PRC
+        // Clear PRC. On USB 2.0 ports PED is RW1CS — writing 1 *disables* the
+        // port. Mask PED to 0 so we only clear PRC, leaving the freshly enabled
+        // port intact. Writing 0 to any RW1CS bit is a no-op per the xHCI spec.
         let portsc = unsafe { core::ptr::read_volatile(port_reg as *const u32) };
         unsafe {
-            core::ptr::write_volatile(port_reg as *mut u32, portsc | PORTSC_PRC);
+            core::ptr::write_volatile(port_reg as *mut u32, (portsc & !PORTSC_PED) | PORTSC_PRC);
         }
 
         // Check port is enabled
@@ -483,9 +488,9 @@ impl Xhci {
 
             // EP0 Context (endpoint 0 = index 1 in device context array)
             let max_pkt: u32 = match speed {
-                3 => 64,  // High speed
-                4 => 512, // Super speed
-                _ => 8,   // Full / Low speed
+                3 => 64,       // High speed (USB 2.0)
+                4 | 5 => 512,  // SuperSpeed / SuperSpeedPlus (USB 3.x)
+                _ => 8,        // Full / Low speed
             };
             in_ctx.dev_ctx.ep[0].dword[1] = (3 << 3)        // EP type: control
                 | (max_pkt << 16) // MaxPacketSize
@@ -525,8 +530,10 @@ impl Xhci {
             .control_in(&mut dev, 0x80, 6, 0x0100, 0, 18, buf_phys)
             .is_some()
         {
-            let max_pkt = unsafe { (buf_virt as *const u8).add(7).read() } as u32;
-            crate::serial_println!("[xhci] bMaxPacketSize0={}", max_pkt);
+            let raw_pkt = unsafe { (buf_virt as *const u8).add(7).read() } as u32;
+            // For USB 3.x (SuperSpeed+), bMaxPacketSize0 is a base-2 exponent.
+            let max_pkt = if speed >= 4 { 1u32 << raw_pkt.min(10) } else { raw_pkt };
+            crate::serial_println!("[xhci] bMaxPacketSize0={} (raw={})", max_pkt, raw_pkt);
 
             // Update EP0 MaxPacketSize in device context
             unsafe {
@@ -545,8 +552,21 @@ impl Xhci {
             let _ = self.send_command(ec);
         }
 
-        // Get full Configuration Descriptor to find MSC interface
-        let cfg_len = 64usize;
+        // Get Configuration Descriptor: first read 9 bytes to get wTotalLength,
+        // then fetch the full descriptor so multi-interface drives are not truncated.
+        let (hdr_virt, hdr_phys) = dma_alloc(9, 64);
+        if self
+            .control_in(&mut dev, 0x80, 6, 0x0200, 0, 9, hdr_phys)
+            .is_none()
+        {
+            crate::serial_println!("[xhci] GET_DESCRIPTOR(Config hdr) failed");
+            return;
+        }
+        let w_total = unsafe {
+            let h = hdr_virt as *const u8;
+            u16::from_le_bytes([h.add(2).read(), h.add(3).read()]) as usize
+        };
+        let cfg_len = w_total.max(9).min(512);
         let (cfg_virt, cfg_phys) = dma_alloc(cfg_len, 64);
         if self
             .control_in(&mut dev, 0x80, 6, 0x0200, 0, cfg_len as u16, cfg_phys)
@@ -666,6 +686,10 @@ impl Xhci {
         dev.bulk_in_ring = bi_ring;
         dev.bulk_out_ring = bo_ring;
 
+        // SCSI INQUIRY — clears any UNIT ATTENTION condition that some drives
+        // assert the first time they are accessed after enumeration.
+        self.scsi_inquiry(&mut dev);
+
         // SCSI READ CAPACITY to get block count/size
         if let Some((count, bsize)) = self.read_capacity(&mut dev) {
             dev.block_count = count;
@@ -701,7 +725,14 @@ impl Xhci {
 
         let slot = dev.slot_id;
         self.ring_doorbell(slot, 1);
+        // For control IN with data: the xHC generates a Transfer Event for the
+        // Data Stage (IOC=1) and then a second one for the Status Stage (IOC=1).
+        // Consume the Data Stage event first; if there was a data stage, consume
+        // the Status Stage event too so it does not pollute future wait_event calls.
         let evt = self.wait_event(ty::TRANSFER_EVENT)?;
+        if wlen > 0 {
+            let _ = self.wait_event(ty::TRANSFER_EVENT);
+        }
         if evt.completion_code() != cc::SUCCESS && evt.completion_code() != cc::SHORT_PACKET {
             return None;
         }
@@ -778,11 +809,7 @@ impl Xhci {
         cdb: &[u8],
         data_in: Option<usize>,
     ) -> Option<alloc::vec::Vec<u8>> {
-        static mut TAG: u32 = 1;
-        let tag = unsafe { TAG };
-        unsafe {
-            TAG = TAG.wrapping_add(1);
-        }
+        let tag = SCSI_TAG.fetch_add(1, Ordering::Relaxed);
 
         let transfer_len = data_in.unwrap_or(0);
 
@@ -810,6 +837,31 @@ impl Xhci {
         let _ = self.bulk_in(dev_idx, 13);
 
         result
+    }
+
+    fn scsi_write_command(&mut self, dev_idx: usize, cdb: &[u8], data: &[u8]) -> Option<()> {
+        let tag = SCSI_TAG.fetch_add(1, Ordering::Relaxed);
+
+        let mut cbw = [0u8; 31];
+        cbw[0..4].copy_from_slice(&0x43425355u32.to_le_bytes());
+        cbw[4..8].copy_from_slice(&tag.to_le_bytes());
+        cbw[8..12].copy_from_slice(&(data.len() as u32).to_le_bytes());
+        cbw[12] = 0x00; // OUT
+        cbw[14] = cdb.len() as u8;
+        cbw[15..15 + cdb.len()].copy_from_slice(cdb);
+
+        if !self.bulk_out(dev_idx, &cbw) {
+            return None;
+        }
+        if !data.is_empty() && !self.bulk_out(dev_idx, data) {
+            return None;
+        }
+
+        let csw = self.bulk_in(dev_idx, 13)?;
+        if csw.len() < 13 || &csw[0..4] != b"USBS" || csw[12] != 0 {
+            return None;
+        }
+        Some(())
     }
 
     fn read_capacity(&mut self, dev: &mut UsbDevice) -> Option<(u64, u32)> {
@@ -856,6 +908,46 @@ impl Xhci {
         Some((last_lba as u64 + 1, block_len))
     }
 
+    /// Send a SCSI INQUIRY command directly to `dev`.
+    ///
+    /// This is called immediately after bulk endpoints are configured to clear
+    /// any UNIT ATTENTION condition the drive may assert on first access.
+    /// Failures are silently ignored — it is purely a warm-up command.
+    fn scsi_inquiry(&mut self, dev: &mut UsbDevice) {
+        const INQUIRY_LEN: u32 = 0x24;
+        let cdb = [0x12u8, 0x00, 0x00, 0x00, INQUIRY_LEN as u8, 0x00];
+        let tag = SCSI_TAG.fetch_add(1, Ordering::Relaxed);
+
+        let mut cbw = [0u8; 31];
+        cbw[0..4].copy_from_slice(&0x43425355u32.to_le_bytes());
+        cbw[4..8].copy_from_slice(&tag.to_le_bytes());
+        cbw[8..12].copy_from_slice(&INQUIRY_LEN.to_le_bytes());
+        cbw[12] = 0x80; // IN
+        cbw[14] = cdb.len() as u8;
+        cbw[15..15 + cdb.len()].copy_from_slice(&cdb);
+
+        let (cbw_virt, cbw_phys) = dma_alloc(31, 64);
+        unsafe { core::ptr::copy_nonoverlapping(cbw.as_ptr(), cbw_virt, 31) };
+        let (buf_virt, buf_phys) = dma_alloc(INQUIRY_LEN as usize, 64);
+        let (csw_virt, csw_phys) = dma_alloc(13, 64);
+        let _ = (cbw_virt, buf_virt, csw_virt);
+
+        let ep_out = ep_dci(dev.bulk_out_ep, false) as u8;
+        let ep_in = ep_dci(dev.bulk_in_ep, true) as u8;
+
+        dev.bulk_out_ring.push(normal_trb(cbw_phys, 31, true));
+        self.ring_doorbell(dev.slot_id, ep_out);
+        let _ = self.wait_event(ty::TRANSFER_EVENT);
+
+        dev.bulk_in_ring.push(normal_trb(buf_phys, INQUIRY_LEN, true));
+        self.ring_doorbell(dev.slot_id, ep_in);
+        let _ = self.wait_event(ty::TRANSFER_EVENT);
+
+        dev.bulk_in_ring.push(normal_trb(csw_phys, 13, true));
+        self.ring_doorbell(dev.slot_id, ep_in);
+        let _ = self.wait_event(ty::TRANSFER_EVENT);
+    }
+
     // -----------------------------------------------------------------------
     // Public sector read/write (used by FAT32 driver)
     // -----------------------------------------------------------------------
@@ -886,6 +978,30 @@ impl Xhci {
             0,           // control
         ];
         self.scsi_command(dev_idx, &cdb, Some(len))
+    }
+
+    pub fn write_sectors_dev(&mut self, dev_idx: usize, lba: u64, data: &[u8]) -> Option<()> {
+        if !data.len().is_multiple_of(512) {
+            return None;
+        }
+        let count = data.len() / 512;
+        if count == 0 || count > u16::MAX as usize {
+            return None;
+        }
+        let count = count as u16;
+        let cdb = [
+            0x2au8, // WRITE(10) opcode
+            0,      // LUN=0
+            (lba >> 24) as u8,
+            (lba >> 16) as u8,
+            (lba >> 8) as u8,
+            lba as u8,
+            0,
+            (count >> 8) as u8,
+            count as u8,
+            0,
+        ];
+        self.scsi_write_command(dev_idx, &cdb, data)
     }
 
     /// Re-scan all ports and enumerate any newly connected devices.

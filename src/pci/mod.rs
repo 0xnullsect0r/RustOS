@@ -150,3 +150,26 @@ pub fn find_xhci(devices: &[PciDevice]) -> Option<&PciDevice> {
         .iter()
         .find(|d| d.class == 0x0C && d.subclass == 0x03 && d.prog_if == 0x30)
 }
+
+/// Find an Intel AX210-family Wi-Fi adapter (vendor 0x8086).
+pub fn find_ax210(devices: &[PciDevice]) -> Option<&PciDevice> {
+    devices.iter().find(|d| {
+        d.vendor_id == 0x8086
+            && matches!(d.device_id, 0x2725 | 0x51F0 | 0x54F0 | 0x7F70)
+    })
+}
+
+/// Enable Bus Master + Memory Space in the PCI command register (offset 0x04).
+/// Must be called before any MMIO or DMA access to the device.
+pub fn enable_bus_master(bus: u8, dev: u8, func: u8) {
+    let addr = config_address(bus, dev, func, 0x04);
+    unsafe {
+        let mut addr_port: Port<u32> = Port::new(CONFIG_ADDRESS);
+        let mut data_port: Port<u32> = Port::new(CONFIG_DATA);
+        addr_port.write(addr);
+        let val = data_port.read();
+        // Bit 1 = Memory Space Enable, Bit 2 = Bus Master Enable
+        addr_port.write(addr);
+        data_port.write(val | 0b110);
+    }
+}

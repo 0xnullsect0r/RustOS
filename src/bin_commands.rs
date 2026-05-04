@@ -2,8 +2,13 @@ use crate::vfs::{NodeType, VFS};
 
 const VIRTUAL_BIN_COMMANDS: &[&str] = &[
     "help", "echo", "clear", "uname", "color", "pwd", "ls", "cd", "mkdir", "rm", "cat", "write",
-    "cp", "mv", "meminfo", "mount", "exec", "usbscan", "reboot",
+    "cp", "mv", "meminfo", "mount", "exec", "usbscan", "reboot", "shutdown", "rsh", "net", "lspci",
+    "lsusb", "lsblk", "grep", "ps", "wifi", "ping", "ifconfig", "netstat",
 ];
+
+pub fn virtual_bin_commands() -> &'static [&'static str] {
+    VIRTUAL_BIN_COMMANDS
+}
 
 pub fn is_virtual_bin_path(path: &str) -> Option<&str> {
     let cmd = path.strip_prefix("/bin/")?;
@@ -28,8 +33,14 @@ pub fn run_virtual_bin_command(path: &str) -> Option<i64> {
         "ls" => cmd_ls(),
         "meminfo" => cmd_meminfo(),
         "mount" => cmd_mount(),
+        "net" => cmd_net(),
         "usbscan" => cmd_usbscan(),
         "reboot" => cmd_reboot(),
+        "shutdown" => cmd_shutdown(),
+        "rsh" => {
+            crate::println!("rsh is already running on the console");
+            0
+        }
         "color" => {
             crate::println!("Usage: /bin/color <fg> <bg>");
             2
@@ -66,16 +77,49 @@ pub fn run_virtual_bin_command(path: &str) -> Option<i64> {
             crate::println!("Usage: /bin/exec <path>");
             2
         }
+        "lspci" => {
+            crate::shell::commands::cmd_lspci(&[]);
+            0
+        }
+        "lsusb" => {
+            crate::shell::commands::cmd_lsusb(&[]);
+            0
+        }
+        "lsblk" => {
+            crate::shell::commands::cmd_lsblk(&[]);
+            0
+        }
+        "ps" => {
+            crate::shell::commands::cmd_ps(&[]);
+            0
+        }
+        "wifi" => {
+            crate::shell::commands::cmd_wifi(&[]);
+            0
+        }
+        "ping" => {
+            crate::println!("Usage: ping <host>");
+            2
+        }
+        "ifconfig" => {
+            crate::shell::commands::cmd_ifconfig(&[]);
+            0
+        }
+        "netstat" => {
+            crate::shell::commands::cmd_netstat(&[]);
+            0
+        }
+        "grep" => {
+            crate::println!("Usage: /bin/grep <pattern> <file>");
+            2
+        }
         _ => 127,
     };
     Some(code)
 }
 
 fn cmd_help() -> i64 {
-    crate::println!("RustOS /bin commands:");
-    for cmd in VIRTUAL_BIN_COMMANDS {
-        crate::println!("  /bin/{}", cmd);
-    }
+    crate::shell::commands::print_help();
     0
 }
 
@@ -131,16 +175,22 @@ fn cmd_meminfo() -> i64 {
 }
 
 fn cmd_mount() -> i64 {
-    let mounts = VFS.lock().as_ref().map(|vfs| vfs.list_mounts());
-    match mounts {
-        Some(m) if !m.is_empty() => {
-            crate::println!("/  (root fs)");
+    let vfs = VFS.lock();
+    match vfs.as_ref() {
+        Some(vfs) => {
+            crate::println!("/  ({})", vfs.root_name());
+            let m = vfs.list_mounts();
             for mp in &m {
                 crate::println!("{}  (fat32)", mp);
             }
         }
-        _ => crate::println!("/  (root fs)  [no additional mounts]"),
+        None => crate::println!("mount: VFS not initialised"),
     }
+    0
+}
+
+fn cmd_net() -> i64 {
+    crate::net::print_status();
     0
 }
 
@@ -157,12 +207,10 @@ fn cmd_usbscan() -> i64 {
 
 /// Triggers an immediate system reboot via keyboard controller reset and never returns.
 fn cmd_reboot() -> ! {
-    crate::println!("Rebooting...");
-    unsafe {
-        x86_64::instructions::interrupts::disable();
-        let mut port: x86_64::instructions::port::Port<u8> =
-            x86_64::instructions::port::Port::new(0x64);
-        port.write(0xFE_u8);
-    }
-    crate::hlt_loop();
+    crate::reboot::reboot();
+}
+
+/// Attempts an ACPI S5 power-off and never returns.
+fn cmd_shutdown() -> ! {
+    crate::reboot::shutdown();
 }

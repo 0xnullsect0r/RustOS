@@ -93,6 +93,8 @@ pub fn map_mmio_region(phys_base: u64, size: usize) -> u64 {
 /// Map a set of virtual pages for a user process segment.
 /// `virt_base` must be page-aligned; `size` is rounded up to the next page.
 pub fn map_user_segment(virt_base: u64, size: usize) -> Result<(), MapToError<Size4KiB>> {
+    use crate::serial_println;
+
     let num_pages = size.div_ceil(4096);
     let mut mapper_guard = GLOBAL_MAPPER.lock();
     let mapper = mapper_guard
@@ -102,14 +104,32 @@ pub fn map_user_segment(virt_base: u64, size: usize) -> Result<(), MapToError<Si
     for i in 0..num_pages as u64 {
         let virt = VirtAddr::new(virt_base + i * 4096);
         let page = Page::<Size4KiB>::containing_address(virt);
+
+        // ELF PT_LOAD segments are allowed to share boundary pages. RustOS maps
+        // all user segment pages with PRESENT | WRITABLE today regardless of
+        // ELF segment permissions, so overlapping pages cannot have conflicting
+        // per-segment flags here; keep the first mapping and let the loader copy
+        // the next segment's bytes into it.
+        if mapper.translate_page(page).is_ok() {
+            continue;
+        }
+
         let frame = GlobalFrameAllocatorRef
             .allocate_frame()
             .ok_or(MapToError::FrameAllocationFailed)?;
         let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
         unsafe {
-            mapper
-                .map_to(page, frame, flags, &mut GlobalFrameAllocatorRef)?
-                .flush()
+            match mapper.map_to(page, frame, flags, &mut GlobalFrameAllocatorRef) {
+                Ok(flusher) => flusher.flush(),
+                Err(e) => {
+                    serial_println!(
+                        "[memory] Failed to map page at 0x{:x}: {:?}",
+                        virt.as_u64(),
+                        e
+                    );
+                    return Err(e);
+                }
+            }
         };
     }
     Ok(())

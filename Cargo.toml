@@ -17,7 +17,6 @@ bootloader_api = "0.11"
 volatile = "0.2.6"
 spin = "0.5.2"
 x86_64 = "0.14.2"
-uart_16550 = "0.6.0"
 pic8259 = "0.10.1"
 pc-keyboard = "0.7.0"
 linked_list_allocator = "0.9.0"
@@ -45,6 +44,5 @@ version = "0.3.4"
 default-features = false
 features = ["alloc"]
 
-[package.metadata.bootloader]
-physical-memory-offset = "0xFFFF800000000000"
-map-physical-memory = true
+[dependencies.tcp-ip]
+path = "tcp-ip"

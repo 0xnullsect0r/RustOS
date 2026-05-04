@@ -109,8 +109,8 @@ done
 SCRIPT_DIR="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")" && pwd)"
 cd "$SCRIPT_DIR"
 
-echo "Updating submodules..."
-git submodule update --init --recursive
+echo "Updating submodules to latest upstream commits..."
+git submodule update --init --remote --recursive
 
 echo "Building kernel (release)..."
 cargo build --release
@@ -132,8 +132,6 @@ echo
 echo "Target drive: $DRIVE"
 echo
 echo "WARNING: ALL DATA ON '$DRIVE' WILL BE PERMANENTLY DESTROYED."
-echo "Press Ctrl+C within 5 seconds to abort ..."
-sleep 5
 echo
 
 echo "Writing image to $DRIVE ..."
@@ -227,6 +225,47 @@ if command -v sudo &>/dev/null && [[ "$(id -u)" -ne 0 ]]; then
 else
     mkfs.fat -F 32 -n RUSTOS_ROOT "$STORAGE_PART"
 fi
+
+# Populate the FAT32 root filesystem with a standard directory skeleton so
+# that the kernel has a proper persistent root from first boot.
+echo "Populating FAT32 storage partition with initial directory skeleton..."
+MOUNT_TMP=$(mktemp -d)
+if command -v sudo &>/dev/null && [[ "$(id -u)" -ne 0 ]]; then
+    sudo mount -t vfat "$STORAGE_PART" "$MOUNT_TMP"
+    sudo mkdir -p \
+        "$MOUNT_TMP/bin"  \
+        "$MOUNT_TMP/etc"  \
+        "$MOUNT_TMP/home" \
+        "$MOUNT_TMP/mnt"  \
+        "$MOUNT_TMP/mnt/c" \
+        "$MOUNT_TMP/mnt/d" \
+        "$MOUNT_TMP/proc" \
+        "$MOUNT_TMP/sys"  \
+        "$MOUNT_TMP/tmp"  \
+        "$MOUNT_TMP/usr"  \
+        "$MOUNT_TMP/usr/bin" \
+        "$MOUNT_TMP/var"  \
+        "$MOUNT_TMP/var/log"
+    sudo umount "$MOUNT_TMP"
+else
+    mount -t vfat "$STORAGE_PART" "$MOUNT_TMP"
+    mkdir -p \
+        "$MOUNT_TMP/bin"  \
+        "$MOUNT_TMP/etc"  \
+        "$MOUNT_TMP/home" \
+        "$MOUNT_TMP/mnt"  \
+        "$MOUNT_TMP/mnt/c" \
+        "$MOUNT_TMP/mnt/d" \
+        "$MOUNT_TMP/proc" \
+        "$MOUNT_TMP/sys"  \
+        "$MOUNT_TMP/tmp"  \
+        "$MOUNT_TMP/usr"  \
+        "$MOUNT_TMP/usr/bin" \
+        "$MOUNT_TMP/var"  \
+        "$MOUNT_TMP/var/log"
+    umount "$MOUNT_TMP"
+fi
+rmdir "$MOUNT_TMP"
 
 echo
 echo "Done! '$DRIVE' is ready:"

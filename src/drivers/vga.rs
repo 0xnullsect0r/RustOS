@@ -144,6 +144,25 @@ impl Writer {
     }
 }
 
+// Keep this conversion private so the VGA color enum remains the shell-facing
+// API while framebuffer-specific colors stay encapsulated in the active backend.
+// The framebuffer palette is intentionally smaller than VGA's 16-color text
+// palette, so light/dark variants collapse to the nearest base color.
+fn to_framebuffer_color(color: Color) -> crate::drivers::framebuffer::Color {
+    use crate::drivers::framebuffer::Color as FbColor;
+
+    match color {
+        Color::Black => FbColor::BLACK,
+        Color::Blue | Color::LightBlue => FbColor::BLUE,
+        Color::Green | Color::LightGreen => FbColor::GREEN,
+        Color::Cyan | Color::LightCyan => FbColor::CYAN,
+        Color::Red | Color::LightRed => FbColor::RED,
+        Color::Magenta | Color::Pink => FbColor::MAGENTA,
+        Color::Brown | Color::Yellow => FbColor::YELLOW,
+        Color::LightGray | Color::DarkGray | Color::White => FbColor::WHITE,
+    }
+}
+
 impl fmt::Write for Writer {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         self.write_string(s);
@@ -170,6 +189,34 @@ pub fn _print(args: fmt::Arguments) {
 
     // Always mirror to serial for debugging
     crate::serial_print!("{}", args);
+}
+
+/// Clear whichever console backend is active.
+pub fn clear_screen() {
+    use x86_64::instructions::interrupts;
+
+    interrupts::without_interrupts(|| {
+        use crate::drivers::framebuffer::FRAMEBUFFER_WRITER;
+        if let Some(fb_writer) = FRAMEBUFFER_WRITER.lock().as_mut() {
+            fb_writer.clear_screen();
+        } else {
+            WRITER.lock().clear_screen();
+        }
+    });
+}
+
+/// Set colors on whichever console backend is active.
+pub fn set_color(fg: Color, bg: Color) {
+    use x86_64::instructions::interrupts;
+
+    interrupts::without_interrupts(|| {
+        use crate::drivers::framebuffer::FRAMEBUFFER_WRITER;
+        if let Some(fb_writer) = FRAMEBUFFER_WRITER.lock().as_mut() {
+            fb_writer.set_colors(to_framebuffer_color(fg), to_framebuffer_color(bg));
+        } else {
+            WRITER.lock().set_color(fg, bg);
+        }
+    });
 }
 
 /// Like the `print!` macro in the standard library, but prints to the VGA text buffer.
