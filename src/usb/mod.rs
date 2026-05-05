@@ -110,7 +110,13 @@ impl BlockDevice for PartitionBlockDevice {
 pub struct PartitionInfo {
     pub start_lba: u64,
     pub sector_count: u64,
+    /// True when this partition carries the EFI System Partition type GUID.
+    pub is_efi: bool,
 }
+
+/// Records the device index and start LBA of the partition mounted as `/`.
+/// `start_lba == 0` indicates the whole device (no partition table) was used.
+static ROOT_PARTITION: Mutex<Option<(usize, u64)>> = Mutex::new(None);
 
 fn read_u32_le(buf: &[u8], off: usize) -> Option<u32> {
     if off.checked_add(4)? > buf.len() {
@@ -207,40 +213,119 @@ fn gpt_partitions_for_device(dev_idx: usize) -> alloc::vec::Vec<PartitionInfo> {
         if last < first {
             continue;
         }
+        // EFI System Partition type GUID (mixed-endian on-disk representation):
+        // C12A7328-F81F-11D2-BA4B-00A0C93EC93B
+        // bytes: 28 73 2A C1 1F F8 D2 11 BA 4B 00 A0 C9 3E C9 3B
+        let is_efi = entries[off..off + 6] == [0x28, 0x73, 0x2A, 0xC1, 0x1F, 0xF8];
         out.push(PartitionInfo {
             start_lba: first,
             sector_count: (last - first) + 1,
+            is_efi,
         });
     }
 
     out
 }
 
-/// Mount partition 2 of USB device 0 as the root filesystem (`/`) if possible.
-pub fn mount_boot_storage_root() -> bool {
-    let partitions = gpt_partitions_for_device(0);
-    if partitions.len() < 2 {
-        return false;
+/// Parse MBR partition entries for a USB block device.
+/// Returns FAT32 (type 0x0B / 0x0C) partitions only.
+fn mbr_partitions_for_device(dev_idx: usize) -> alloc::vec::Vec<PartitionInfo> {
+    use alloc::vec::Vec;
+
+    let mut dev = XhciBlockDevice { dev_idx };
+    let sector0 = match dev.read_sectors(0, 1) {
+        Some(s) if s.len() >= 512 => s,
+        _ => return Vec::new(),
+    };
+    // MBR signature
+    if sector0[510] != 0x55 || sector0[511] != 0xAA {
+        return Vec::new();
     }
-    let p2 = partitions[1];
-    let block_dev: Box<dyn BlockDevice> = Box::new(PartitionBlockDevice::new(
-        Box::new(XhciBlockDevice { dev_idx: 0 }),
-        p2.start_lba,
-        p2.sector_count,
-    ));
-    let Some(fat32) = crate::fs::fat32::Fat32Fs::new(block_dev) else {
-        return false;
+    // Reject GPT protective MBR (first partition type 0xEE)
+    if sector0[446 + 4] == 0xEE {
+        return Vec::new();
+    }
+
+    let mut out = Vec::new();
+    for i in 0..4usize {
+        let base = 446 + i * 16;
+        let part_type = sector0[base + 4];
+        // FAT32 with CHS (0x0B) or FAT32 with LBA (0x0C)
+        if part_type != 0x0B && part_type != 0x0C {
+            continue;
+        }
+        let start_lba = match read_u32_le(&sector0, base + 8) {
+            Some(v) if v > 0 => v as u64,
+            _ => continue,
+        };
+        let sector_count = match read_u32_le(&sector0, base + 12) {
+            Some(v) if v > 0 => v as u64,
+            _ => continue,
+        };
+        out.push(PartitionInfo { start_lba, sector_count, is_efi: false });
+    }
+    out
+}
+
+/// Mount a FAT32 partition from USB device 0 as the root filesystem (`/`).
+///
+/// Scan order:
+/// 1. All non-EFI GPT partitions in order — try each as FAT32.
+/// 2. MBR FAT32 partitions (type 0x0B/0x0C) — if no GPT found.
+/// 3. Whole device at LBA 0 — for raw FAT32 volumes with no partition table.
+///
+/// Stores the winning (dev_idx, start_lba) in `ROOT_PARTITION` so that
+/// `mount_storage_devices` can skip it and avoid double-mounting.
+pub fn mount_boot_storage_root() -> bool {
+    let try_fat32 = |partitions: alloc::vec::Vec<PartitionInfo>| -> Option<(PartitionInfo, crate::fs::fat32::Fat32Fs)> {
+        for part in partitions {
+            if part.is_efi {
+                continue;
+            }
+            let block_dev: Box<dyn BlockDevice> = Box::new(PartitionBlockDevice::new(
+                Box::new(XhciBlockDevice { dev_idx: 0 }),
+                part.start_lba,
+                part.sector_count,
+            ));
+            if let Some(fat32) = crate::fs::fat32::Fat32Fs::new(block_dev) {
+                return Some((part, fat32));
+            }
+        }
+        None
     };
-    let mut vfs = crate::vfs::VFS.lock();
-    let Some(vfs) = vfs.as_mut() else {
-        return false;
-    };
-    vfs.set_root(
-        Box::new(crate::vfs::Fat32Mount(fat32)),
-        "fat32 RUSTOS_ROOT persistent",
-    );
-    crate::println!("[usb] mounted device0 partition2 FAT32 as root filesystem '/'");
-    true
+
+    // 1. Try GPT partitions.
+    let gpt = gpt_partitions_for_device(0);
+    let mut result = if !gpt.is_empty() { try_fat32(gpt) } else { None };
+
+    // 2. Try MBR partitions if GPT yielded nothing.
+    if result.is_none() {
+        result = try_fat32(mbr_partitions_for_device(0));
+    }
+
+    if let Some((part, fat32)) = result {
+        let mut vfs = crate::vfs::VFS.lock();
+        if let Some(vfs) = vfs.as_mut() {
+            vfs.set_root(Box::new(crate::vfs::Fat32Mount(fat32)), "fat32 RUSTOS_ROOT persistent");
+            *ROOT_PARTITION.lock() = Some((0, part.start_lba));
+            crate::println!("[usb] mounted device0 lba{} FAT32 as root '/'", part.start_lba);
+            return true;
+        }
+    }
+
+    // 3. Try whole device (raw FAT32, no partition table).
+    let block_dev: Box<dyn BlockDevice> = Box::new(XhciBlockDevice { dev_idx: 0 });
+    if let Some(fat32) = crate::fs::fat32::Fat32Fs::new(block_dev) {
+        let mut vfs = crate::vfs::VFS.lock();
+        if let Some(vfs) = vfs.as_mut() {
+            vfs.set_root(Box::new(crate::vfs::Fat32Mount(fat32)), "fat32 RUSTOS_ROOT persistent");
+            *ROOT_PARTITION.lock() = Some((0, 0));
+            crate::println!("[usb] mounted device0 whole-device FAT32 as root '/'");
+            return true;
+        }
+    }
+
+    false
 }
 
 // ---------------------------------------------------------------------------
@@ -261,6 +346,8 @@ pub fn mount_storage_devices(from_idx: usize) {
         .map(|x| x.devices.len())
         .unwrap_or(0);
 
+    let root_part = *ROOT_PARTITION.lock();
+
     for dev_idx in from_idx..device_count {
         let mount_path = if dev_idx == 0 {
             alloc::string::String::from("/usb")
@@ -270,19 +357,29 @@ pub fn mount_storage_devices(from_idx: usize) {
 
         let mut mounted = false;
 
-        // First try the whole device as a FAT32 volume.
-        if let Some(fat32) = crate::fs::fat32::Fat32Fs::new(Box::new(XhciBlockDevice { dev_idx })) {
-            let mut vfs = crate::vfs::VFS.lock();
-            if let Some(vfs) = vfs.as_mut() {
-                vfs.mount(&mount_path, Box::new(crate::vfs::Fat32Mount(fat32)));
-                crate::println!("[usb] FAT32 volume mounted at {}", mount_path);
-                mounted = true;
+        // Try the whole device as a FAT32 volume (for raw, partition-less drives).
+        // Skip if this device+offset is already the root partition.
+        let skip_whole = root_part == Some((dev_idx, 0));
+        if !skip_whole {
+            if let Some(fat32) = crate::fs::fat32::Fat32Fs::new(Box::new(XhciBlockDevice { dev_idx })) {
+                let mut vfs = crate::vfs::VFS.lock();
+                if let Some(vfs) = vfs.as_mut() {
+                    vfs.mount(&mount_path, Box::new(crate::vfs::Fat32Mount(fat32)));
+                    crate::println!("[usb] FAT32 volume mounted at {}", mount_path);
+                    mounted = true;
+                }
             }
         }
 
-        // If not, try GPT partitions and mount the first FAT32 partition.
+        // Try GPT partitions — skip EFI partitions and the root partition.
         if !mounted {
             for part in gpt_partitions_for_device(dev_idx) {
+                if part.is_efi {
+                    continue;
+                }
+                if root_part == Some((dev_idx, part.start_lba)) {
+                    continue;
+                }
                 let pdev: Box<dyn BlockDevice> = Box::new(PartitionBlockDevice::new(
                     Box::new(XhciBlockDevice { dev_idx }),
                     part.start_lba,
@@ -292,7 +389,30 @@ pub fn mount_storage_devices(from_idx: usize) {
                     let mut vfs = crate::vfs::VFS.lock();
                     if let Some(vfs) = vfs.as_mut() {
                         vfs.mount(&mount_path, Box::new(crate::vfs::Fat32Mount(fat32)));
-                        crate::println!("[usb] FAT32 partition mounted at {}", mount_path);
+                        crate::println!("[usb] FAT32 partition lba{} mounted at {}", part.start_lba, mount_path);
+                        mounted = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Try MBR partitions if GPT found nothing.
+        if !mounted {
+            for part in mbr_partitions_for_device(dev_idx) {
+                if root_part == Some((dev_idx, part.start_lba)) {
+                    continue;
+                }
+                let pdev: Box<dyn BlockDevice> = Box::new(PartitionBlockDevice::new(
+                    Box::new(XhciBlockDevice { dev_idx }),
+                    part.start_lba,
+                    part.sector_count,
+                ));
+                if let Some(fat32) = crate::fs::fat32::Fat32Fs::new(pdev) {
+                    let mut vfs = crate::vfs::VFS.lock();
+                    if let Some(vfs) = vfs.as_mut() {
+                        vfs.mount(&mount_path, Box::new(crate::vfs::Fat32Mount(fat32)));
+                        crate::println!("[usb] FAT32 MBR partition lba{} mounted at {}", part.start_lba, mount_path);
                         mounted = true;
                         break;
                     }

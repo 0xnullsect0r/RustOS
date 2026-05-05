@@ -133,8 +133,7 @@ fn init_usb_storage() {
     }
 
     if !rustos::usb::mount_boot_storage_root() {
-        rustos::serial_println!("[usb] no boot storage partition mounted as root");
-        println!("[usb] WARNING: persistent RUSTOS_ROOT was not mounted; / is ramfs");
+        panic!("[init] FATAL: no FAT32 root partition found on USB device 0 — cannot boot without persistent storage");
     }
 
     // Mount all found devices under /usb* (device 0 → /usb, device 1 → /usb1, …).

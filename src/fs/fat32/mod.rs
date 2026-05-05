@@ -515,7 +515,7 @@ impl Fat32Fs {
                 self.free_chain(entry.cluster)?;
                 idx
             }
-            None => self.find_free_dir_entry(parent.cluster)?,
+            None => self.find_or_expand_dir(parent.cluster)?,
         };
 
         let first_cluster = clusters.first().copied().unwrap_or(0);
@@ -556,14 +556,29 @@ impl Fat32Fs {
         None
     }
 
-    fn find_free_dir_entry(&mut self, dir_cluster: u32) -> Option<usize> {
+    /// Find a free 32-byte directory slot in the given directory cluster chain.
+    /// If all existing slots are occupied, allocates a new cluster, links it into
+    /// the chain, and returns the index of its first (now free) entry.
+    fn find_or_expand_dir(&mut self, dir_cluster: u32) -> Option<usize> {
         let data = self.read_chain(dir_cluster);
         for (idx, raw) in data.chunks_exact(32).enumerate() {
             if raw[0] == 0x00 || raw[0] == 0xE5 {
                 return Some(idx);
             }
         }
-        None
+        // Directory cluster chain is full — allocate and link a new cluster.
+        let chain = self.cluster_chain(dir_cluster);
+        let last_cluster = *chain.last()?;
+        let new_cluster = self.find_free_cluster()?;
+        // Mark new cluster as EOF, then link last → new.
+        self.write_fat_entry(new_cluster, 0x0FFF_FFFF)?;
+        self.write_fat_entry(last_cluster, new_cluster)?;
+        // Zero the new cluster so all entries are treated as free.
+        let bpc = self.bytes_per_cluster();
+        let zero = alloc::vec![0u8; bpc];
+        self.write_cluster(new_cluster, &zero)?;
+        // The first slot in the new cluster.
+        Some(data.len() / 32)
     }
 
     fn write_dir_entry(
@@ -640,7 +655,7 @@ impl Fat32Fs {
         dir_data[32..64].copy_from_slice(&dir_entry_bytes(&dotdot));
         self.write_cluster(new_cluster, &dir_data)?;
         // Add entry to parent directory
-        let dir_index = self.find_free_dir_entry(parent.cluster)?;
+        let dir_index = self.find_or_expand_dir(parent.cluster)?;
         let entry = make_dir_entry_raw(short_name, new_cluster, 0, ATTR_DIRECTORY);
         self.write_dir_entry(parent.cluster, dir_index, &entry)
     }
@@ -699,7 +714,7 @@ impl Fat32Fs {
                 self.lookup(&dst_parent_path)?
             };
             let short_name = make_short_name(&dst_name)?;
-            let dir_index = self.find_free_dir_entry(dst_parent.cluster)?;
+            let dir_index = self.find_or_expand_dir(dst_parent.cluster)?;
             let entry = make_dir_entry_raw(short_name, src_entry.cluster, 0, ATTR_DIRECTORY);
             self.write_dir_entry(dst_parent.cluster, dir_index, &entry)?;
             // Remove old entry without freeing the cluster chain

@@ -1,9 +1,9 @@
 //! Virtual File System (VFS) abstraction.
 //!
 //! The VFS layer provides:
-//! - An in-memory `RamFs` fallback for `/` when persistent storage is absent
 //! - A `Filesystem` trait that external filesystems (e.g. FAT32 on USB) implement
-//! - A global `MOUNTS` table routing paths to the correct filesystem
+//! - A global mount table routing paths to the correct filesystem
+//! - Synthetic entries for virtual directories (`/bin`) and active mount points
 
 pub mod ramfs;
 pub use ramfs::RamFs;
@@ -273,8 +273,7 @@ impl Vfs {
         let norm = normalize(path);
         if norm == "/bin" {
             let mut entries = virtual_bin_entries();
-            // Also include any real files stored in the root FS under /bin/
-            // (e.g. ELF binaries installed by net_bins::install).
+            // Also include any real files stored in the root FS under /bin/.
             if let Ok(real) = self.root.list_dir("/bin") {
                 for e in real {
                     if !entries.iter().any(|v| v.name == e.name) {
@@ -286,11 +285,28 @@ impl Vfs {
         }
         let (fs, rel) = self.route(path);
         let mut entries = fs.list_dir(&rel)?;
-        if norm == "/" && !entries.iter().any(|entry| entry.name == "bin") {
-            entries.push(DirEntry {
-                name: String::from("bin"),
-                node_type: NodeType::Directory,
-            });
+        if norm == "/" {
+            // Inject the virtual /bin directory if not already present.
+            if !entries.iter().any(|e| e.name == "bin") {
+                entries.push(DirEntry {
+                    name: String::from("bin"),
+                    node_type: NodeType::Directory,
+                });
+            }
+            // Inject mount point directories so that `ls /` shows them even when
+            // they have not been physically created on the root filesystem.
+            for mp in &self.mounts {
+                let mp_name = mp.prefix.trim_start_matches('/');
+                // Only inject top-level mount points (no '/' in the stripped name).
+                if !mp_name.contains('/') && !mp_name.is_empty()
+                    && !entries.iter().any(|e| e.name == mp_name)
+                {
+                    entries.push(DirEntry {
+                        name: String::from(mp_name),
+                        node_type: NodeType::Directory,
+                    });
+                }
+            }
         }
         Ok(entries)
     }
