@@ -178,4 +178,3 @@ The linker script (`rustos-link.x`) places the program at virtual address
 | Repo | Purpose |
 |------|---------|
 | [`rsh`](https://github.com/RustOS-Dev/rsh) | RustOS shell (`/bin/rsh`) |
-| [`tcp-ip`](https://github.com/RustOS-Dev/tcp-ip) | TCP/IP stack + WiFi CLI tools |

@@ -44,5 +44,3 @@ version = "0.3.4"
 default-features = false
 features = ["alloc"]
 
-[dependencies.tcp-ip]
-path = "tcp-ip"

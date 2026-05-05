@@ -14,8 +14,6 @@ pub mod bin_commands;
 pub mod block;
 pub mod drivers;
 pub mod fs;
-pub mod net;
-pub mod net_bins;
 pub mod pci;
 pub mod process;
 pub mod shell;

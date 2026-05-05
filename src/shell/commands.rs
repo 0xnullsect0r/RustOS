@@ -50,7 +50,6 @@ pub fn dispatch(shell: &mut Shell, cmd: &str, args: &[&str]) {
         "meminfo" => cmd_meminfo(),
         "mount" => cmd_mount(shell, args),
         "umount" => cmd_umount(shell, args),
-        "net" => cmd_net(),
         "exec" => cmd_exec(shell, args),
         "usbscan" => cmd_usbscan(),
         "reboot" => cmd_reboot(),
@@ -60,10 +59,6 @@ pub fn dispatch(shell: &mut Shell, cmd: &str, args: &[&str]) {
         "lsblk" => cmd_lsblk(args),
         "grep" => cmd_grep(shell, args),
         "ps" => cmd_ps(args),
-        "wifi" => cmd_wifi(args),
-        "ping" => cmd_ping(args),
-        "ifconfig" => cmd_ifconfig(args),
-        "netstat" => cmd_netstat(args),
         other => crate::println!("{}: command not found", other),
     }
 }
@@ -95,11 +90,6 @@ pub fn print_help() {
     crate::println!("  usbscan                 Scan for newly plugged USB drives");
     crate::println!("  exec <path>             Execute an ELF binary");
     crate::println!("  meminfo                 Show heap memory info");
-    crate::println!("  net                     Show network stack status");
-    crate::println!("  wifi [init|status|scan|connect <ssid>]  WiFi control");
-    crate::println!("  ping <host>             Test network reachability");
-    crate::println!("  ifconfig                Show network interface config");
-    crate::println!("  netstat                 Show active connections");
     crate::println!("  reboot                  Reboot");
     crate::println!("  shutdown                Power off");
     crate::println!("  color <fg> <bg>         Set terminal colors");
@@ -1151,14 +1141,6 @@ fn cmd_umount(shell: &mut Shell, args: &[&str]) {
 }
 
 // ---------------------------------------------------------------------------
-// net (RustOS-specific)
-// ---------------------------------------------------------------------------
-
-fn cmd_net() {
-    crate::net::print_status();
-}
-
-// ---------------------------------------------------------------------------
 // exec (RustOS-specific)
 // ---------------------------------------------------------------------------
 
@@ -1188,32 +1170,6 @@ fn cmd_exec(shell: &mut Shell, args: &[&str]) {
     match crate::process::exec(&data) {
         Ok(code) => crate::println!("exec: process exited with code {}", code),
         Err(e) => crate::println!("exec: load error: {}", e),
-    }
-}
-
-fn exec_embedded_tool(path: &str, tokens: &[&str]) {
-    let data = {
-        let result = VFS.lock().as_mut().and_then(|vfs| vfs.read_file(path).ok());
-        match result {
-            Some(d) => d,
-            None => {
-                crate::println!("{}: not found", path);
-                return;
-            }
-        }
-    };
-
-    let mut line = String::new();
-    for (i, token) in tokens.iter().enumerate() {
-        if i != 0 {
-            line.push(' ');
-        }
-        line.push_str(token);
-    }
-    crate::syscall::queue_stdin_line(line.as_bytes());
-
-    if let Err(e) = crate::process::exec(&data) {
-        crate::println!("{}: load error: {}", path, e);
     }
 }
 
@@ -1856,47 +1812,6 @@ pub fn cmd_ps(args: &[&str]) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// wifi
-// ---------------------------------------------------------------------------
-
-pub fn cmd_wifi(args: &[&str]) {
-    match args.first().copied().unwrap_or("status") {
-        "init" => match crate::net::init() {
-            Ok(()) => {
-                crate::println!("wifi: AX210 driver initialized");
-                crate::net::print_status();
-            }
-            Err(msg) => crate::println!("wifi init: {}", msg),
-        },
-        _ if args.is_empty() => exec_embedded_tool("/bin/wifi", &["status"]),
-        _ => exec_embedded_tool("/bin/wifi", args),
-    }
-}
-
-// ---------------------------------------------------------------------------
-// ping
-// ---------------------------------------------------------------------------
-
-pub fn cmd_ping(args: &[&str]) {
-    exec_embedded_tool("/bin/ping", args);
-}
-
-// ---------------------------------------------------------------------------
-// ifconfig
-// ---------------------------------------------------------------------------
-
-pub fn cmd_ifconfig(args: &[&str]) {
-    exec_embedded_tool("/bin/ifconfig", args);
-}
-
-// ---------------------------------------------------------------------------
-// netstat
-// ---------------------------------------------------------------------------
-
-pub fn cmd_netstat(args: &[&str]) {
-    exec_embedded_tool("/bin/netstat", args);
-}
 struct GrepOptions<'a> {
     pat: &'a str,
     ignore_case: bool,

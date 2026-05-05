@@ -8,9 +8,6 @@
 //! * [`print!`] and [`println!`] macros backed by `core::fmt`.
 //! * A minimal `#[panic_handler]` that calls `sys_exit(1)`.
 //!
-//! Network syscall constants and wrappers (`SYS_WIFI_*`, `SYS_NET_*`) are
-//! available when the **`net`** feature is enabled.
-//!
 //! # Usage
 //!
 //! Add `rustos-rt` as a dependency in your program's `Cargo.toml`:
@@ -66,76 +63,6 @@ pub const SYS_GETCWD: u64 = 79;
 pub const SYS_CHDIR: u64 = 80;
 /// Read directory entries (Linux `getdents64` number for compatibility).
 pub const SYS_GETDENTS64: u64 = 217;
-
-// ── Network syscall numbers (RustOS extensions; require `net` feature) ────────
-
-/// Scan for visible 802.11 networks.
-///
-/// `rdi` = output buffer pointer, `rsi` = buffer length.
-/// Returns bytes written (packed `WifiNetworkEntry` records) or negative error.
-#[cfg(feature = "net")]
-pub const SYS_WIFI_SCAN: u64 = 300;
-
-/// Connect to an 802.11 network.
-///
-/// `rdi` = pointer to [`WifiConnectArgs`], `rsi` = struct size.
-/// Returns 0 on success or a negative error code.
-#[cfg(feature = "net")]
-pub const SYS_WIFI_CONNECT: u64 = 301;
-
-/// Disconnect from the current 802.11 network.
-///
-/// No arguments.  Returns 0 on success.
-#[cfg(feature = "net")]
-pub const SYS_WIFI_DISCONNECT: u64 = 302;
-
-/// Query the current WiFi / IP status.
-///
-/// `rdi` = output buffer pointer, `rsi` = buffer length.
-/// Returns bytes written (packed `WifiStatusEntry`) or negative error.
-#[cfg(feature = "net")]
-pub const SYS_WIFI_STATUS: u64 = 303;
-
-/// Query per-interface IP configuration.
-///
-/// `rdi` = output buffer pointer, `rsi` = buffer length.
-/// Returns bytes written (packed `IfaceInfo` records) or negative error.
-#[cfg(feature = "net")]
-pub const SYS_NET_IFCONFIG: u64 = 304;
-
-/// Set the IP configuration of an interface.
-///
-/// `rdi` = pointer to `IfaceSetArgs`, `rsi` = struct size.
-/// Returns 0 on success or a negative error code.
-#[cfg(feature = "net")]
-pub const SYS_NET_IFCONFIG_SET: u64 = 305;
-
-/// Send a single ICMP echo request and wait for a reply.
-///
-/// `rdi` = destination IPv4 address (u32 big-endian), `rsi` = sequence number.
-/// Returns round-trip time in microseconds or a negative error code.
-#[cfg(feature = "net")]
-pub const SYS_NET_PING: u64 = 306;
-
-/// Query active TCP connections and UDP sockets.
-///
-/// `rdi` = output buffer pointer, `rsi` = buffer length.
-/// Returns bytes written (packed `ConnEntry` records) or negative error.
-#[cfg(feature = "net")]
-pub const SYS_NET_STAT: u64 = 307;
-
-/// Request a DHCP lease on the default interface.
-///
-/// No arguments.  Returns 0 on success or a negative error code.
-#[cfg(feature = "net")]
-pub const SYS_NET_DHCP: u64 = 308;
-
-/// Query the routing table.
-///
-/// `rdi` = output buffer pointer, `rsi` = buffer length.
-/// Returns bytes written (packed `RouteRecord` entries) or negative error.
-#[cfg(feature = "net")]
-pub const SYS_NET_ROUTES: u64 = 310;
 
 // ── Open flags ────────────────────────────────────────────────────────────────
 

@@ -14,6 +14,3 @@ crate-type = ["rlib"]
 
 [features]
 default = []
-# Enables network syscall constants and wrappers (SYS_WIFI_*, SYS_NET_*).
-# Required by the tcp-ip crate.
-net = []

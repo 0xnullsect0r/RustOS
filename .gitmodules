@@ -1,6 +1,3 @@
 [submodule "rsh"]
 	path = rsh
 	url = https://github.com/RustOS-Dev/rsh
-[submodule "tcp-ip"]
-	path = tcp-ip
-	url = https://github.com/RustOS-Dev/tcp-ip

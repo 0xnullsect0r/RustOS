@@ -1,11 +1,9 @@
 # RustOS
 
-A modern x86_64 operating system kernel written in Rust, featuring Wi-Fi networking, USB mass storage, 
-virtual filesystem, framebuffer graphics, and comprehensive hardware support.
+A modern x86_64 operating system kernel written in Rust, featuring USB mass storage, virtual filesystem, framebuffer graphics, and comprehensive hardware support.
 
 **Key Highlights:**
 - 🚀 **Modern Boot**: UEFI-capable bootloader with GOP framebuffer support
-- 🌐 **Networking**: Intel AX210 Wi-Fi 6E driver with full TCP/IP stack (tcp-ip submodule)
 - 💾 **Storage**: USB 3.0 XHCI driver with FAT32 filesystem support
 - 🖥️ **Graphics**: Native UEFI framebuffer with software text rendering
 - 🔧 **Development**: Comprehensive testing, CI/CD, and documentation
@@ -30,11 +28,7 @@ tutorial series, extended with modern drivers, networking, and a modular archite
 - **Hot-plug support** — `usbscan` command detects and mounts new devices
 
 ### Networking
-- **Intel AX210 Wi-Fi 6E** — Native kernel driver via tcp-ip submodule
-- **Full TCP/IP stack** — ARP, IP, ICMP, UDP, TCP, DHCP
-- **802.11 management** — WEP/WPA/WPA2/WPA3 support
-- **Network syscalls** — 300-310 for userspace network access
-- **Userspace tools** — `/bin/wifi`, `/bin/ping`, `/bin/ifconfig`, `/bin/netstat`
+- *(Networking support removed)*
 
 ### Display & I/O
 - **UEFI GOP framebuffer** — Native graphics output with 8x16 bitmap font
@@ -44,7 +38,7 @@ tutorial series, extended with modern drivers, networking, and a modular archite
 
 ### Development
 - **ELF process loader** — Load and execute userspace programs
-- **Syscall interface** — `int 0x80` with 0-99 (file I/O), 100-199 (process), 300-310 (network)
+- **Syscall interface** — `int 0x80` with 0-99 (file I/O), 100-199 (process)
 - **Comprehensive tests** — Integration tests via QEMU
 - **CI/CD pipeline** — Automated checks, formatting, linting, and testing
 - **Extensive documentation** — Architecture, development, and AI assistant guides
@@ -105,18 +99,17 @@ Use [Rufus](https://rufus.ie/) in DD Image mode.
 
 ## 📚 Documentation
 
-### Phase 6 - Comprehensive Reference (NEW)
-- **[SHELL_COMMANDS.md](SHELL_COMMANDS.md)** — Complete shell command reference with flags, examples, and limitations
-- **[SYSCALLS.md](SYSCALLS.md)** — Full syscall documentation (file I/O, process, network syscalls 0-310)
-- **[LIMITATIONS.md](LIMITATIONS.md)** — Known limitations, workarounds, and development roadmap
-- **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** — Common issues, solutions, and error messages
+### Reference
+- **[docs/SHELL_COMMANDS.md](docs/SHELL_COMMANDS.md)** — Complete shell command reference with flags, examples, and limitations
+- **[docs/SYSCALLS.md](docs/SYSCALLS.md)** — Full syscall documentation (file I/O, process)
+- **[docs/LIMITATIONS.md](docs/LIMITATIONS.md)** — Known limitations, workarounds, and development roadmap
+- **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** — Common issues, solutions, and error messages
 
 ### Architecture and Development
-- **[COPILOT_INSTRUCTIONS.md](COPILOT_INSTRUCTIONS.md)** — Comprehensive guide for AI coding assistants
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** — System design and architecture overview
-- **[DEVELOPMENT.md](DEVELOPMENT.md)** — Developer guide for contributing
-- **[NETWORK_INTEGRATION.md](NETWORK_INTEGRATION.md)** — TCP/IP stack integration details
-- **[FRAMEBUFFER_IMPLEMENTATION.md](FRAMEBUFFER_IMPLEMENTATION.md)** — GOP framebuffer driver implementation
+- **[docs/COPILOT_INSTRUCTIONS.md](docs/COPILOT_INSTRUCTIONS.md)** — Comprehensive guide for AI coding assistants
+- **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — System design and architecture overview
+- **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)** — Developer guide for contributing
+- **[docs/FRAMEBUFFER_IMPLEMENTATION.md](docs/FRAMEBUFFER_IMPLEMENTATION.md)** — GOP framebuffer driver implementation
 
 ## 💻 Using RustOS
 
@@ -127,7 +120,7 @@ RustOS boots into a built-in kernel shell with the prompt:
 rsh:/>
 ```
 
-For a complete command reference with flags, options, and examples, see **[SHELL_COMMANDS.md](SHELL_COMMANDS.md)**.
+For a complete command reference with flags, options, and examples, see **[docs/SHELL_COMMANDS.md](docs/SHELL_COMMANDS.md)**.
 
 ### Available Commands
 
@@ -162,16 +155,7 @@ For a complete command reference with flags, options, and examples, see **[SHELL
 - `umount <path>` — Unmount filesystem
 
 **Network:**
-- `net` — Show network status
-- `wifi [scan|status|connect <ssid>]` — WiFi control
-- `ping <host>` — Test network connectivity
-- `ifconfig` — Show network interface config
-- `netstat` — Show active connections
-- `wifi connect <ssid> <password>` — Connect to network
-- `wifi status` — Show connection status
-- `ping <host>` — Send ICMP echo request
-- `ifconfig` — Display network interfaces
-- `netstat` — Show network connections
+- *(Networking support removed)*
 
 ### USB Storage Workflow
 
@@ -228,29 +212,25 @@ Copy the ELF to a USB drive, mount in RustOS, and run with `exec`.
 - **Unit Tests:** 50+ unit tests in QEMU
 - **Integration Tests:** 
   - Storage operations (file I/O, FAT32, VFS)
-  - Network syscalls (socket, bind, connect, etc.)
   - Shell command execution and argument handling
 - **Hardware Tests:** Real hardware validation on x86_64 systems
 - **Regression Tests:** CI/CD pipeline with automated testing
 
 For detailed test results, see:
-- **[PHASE5_TEST_REPORT.md](PHASE5_TEST_REPORT.md)** — Phase 5 stability testing results
-- **[PHASE5_STABILITY_TESTS.md](PHASE5_STABILITY_TESTS.md)** — Phase 5 test plan
+- **[docs/LIMITATIONS.md](docs/LIMITATIONS.md)** — Known limitations and development roadmap
 
 ### Known Limitations
 
-RustOS has some intentional limitations for Phase 6:
+RustOS has some intentional limitations:
 
 - No pipe support (`|`) — Use temporary files instead
 - No output redirection (`>`) — Use `write` command
 - No command substitution — Use separate commands
 - FAT32 limited to 8.3 DOS filenames — Use RamFS for longer names
 - No hot-plug USB support — Insert devices before boot
-- Intel AX210 only for WiFi — Check hardware compatibility
-- No IPv6 support — IPv4 required
 - 16 MiB heap limit — Adequate for most operations
 
-For a comprehensive list of limitations and workarounds, see **[LIMITATIONS.md](LIMITATIONS.md)**.
+For a comprehensive list of limitations and workarounds, see **[docs/LIMITATIONS.md](docs/LIMITATIONS.md)**.
 
 ### System Components
 
@@ -276,15 +256,15 @@ For a comprehensive list of limitations and workarounds, see **[LIMITATIONS.md](
                    │
 ┌──────────────────┴──────────────────────────┐
 │              Device Drivers                  │
-│  ┌────────────┐ ┌────────────┐ ┌──────────┐│
-│  │Framebuffer │ │  USB XHCI  │ │ Network  ││
-│  │    (GOP)   │ │  + MSC BOT │ │  (AX210) ││
-│  └────────────┘ └────────────┘ └──────────┘│
+│  ┌────────────┐ ┌────────────┐ │
+│  │Framebuffer │ │  USB XHCI  │ │
+│  │    (GOP)   │ │  + MSC BOT │ │
+│  └────────────┘ └────────────┘ │
 └──────────────────┬──────────────────────────┘
                    │
 ┌──────────────────┴──────────────────────────┐
 │              Hardware Layer                  │
-│   x86_64 CPU │ RAM │ PCI │ USB │ WiFi │    │
+│   x86_64 CPU │ RAM │ PCI │ USB │    │
 └─────────────────────────────────────────────┘
 ```
 
@@ -307,11 +287,10 @@ Kernel Initialization
     ├── VFS initialization
     ├── PCI enumeration
     ├── USB stack init
-    ├── Network stack init
     └── Launch shell
 ```
 
-For detailed architecture information, see [ARCHITECTURE.md](ARCHITECTURE.md).
+For detailed architecture information, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## 📂 Project Structure
 
@@ -325,11 +304,9 @@ RustOS/
 │   ├── fs/fat32/            # FAT32 filesystem
 │   ├── usb/                 # USB XHCI + mass storage
 │   ├── vfs/                 # Virtual filesystem
-│   ├── net.rs               # Network integration (tcp-ip)
 │   ├── process/             # ELF loader
 │   ├── syscall/             # System call dispatcher
 │   └── shell/               # Built-in kernel shell
-├── tcp-ip/                  # Network stack submodule
 ├── rsh/                     # Shell submodule  
 ├── assets/                  # Fonts and resources
 ├── tests/                   # Integration tests
@@ -411,7 +388,7 @@ gdb target/x86_64-rustos/debug/rustos
 (gdb) continue
 ```
 
-See [DEVELOPMENT.md](DEVELOPMENT.md) for comprehensive development guide.
+See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for comprehensive development guide.
 
 ## 🔄 CI/CD
 
@@ -423,13 +400,6 @@ GitHub Actions automatically runs on every push:
 
 ## 🌐 Submodules
 
-RustOS uses git submodules for modular components:
-
-### tcp-ip (Network Stack)
-- **Repository**: [RustOS-Dev/tcp-ip](https://github.com/RustOS-Dev/tcp-ip)
-- **Purpose**: Intel AX210 Wi-Fi driver, TCP/IP stack
-- **Auto-update**: `build.rs` pulls latest on every build
-
 ### rsh (Shell)
 - **Repository**: [RustOS-Dev/rsh](https://github.com/RustOS-Dev/rsh)  
 - **Purpose**: Userspace shell (future integration)
@@ -437,7 +407,7 @@ RustOS uses git submodules for modular components:
 
 **Manual Update**:
 ```bash
-git submodule update --init --recursive --remote
+git submodule update --init rsh
 ```
 
 ## 📦 Releases
@@ -467,21 +437,6 @@ GitHub Actions will:
 Creates:
 - Partition 1: Boot/EFI partition
 - Partition 2: FAT32 root filesystem (RUSTOS_ROOT)
-- `/lib/firmware/` on `RUSTOS_ROOT` for optional AX210 firmware blobs
-
-To enable AX210 firmware loading on real hardware without committing Intel's
-proprietary blob to this repository, place one of these files on partition 2:
-
-- `/lib/firmware/iwlwifi-ty-a0-gf-a0-72.ucode`
-- `/lib/firmware/iwlwifi-ty-a0-gf-a0-71.ucode`
-
-`write_to_drive.sh` always creates `/lib/firmware/` and first tries to
-auto-detect the AX210 firmware from standard host locations such as
-`/lib/firmware` and `/usr/lib/firmware`. `--ax210-firmware` still accepts either
-a single firmware file or a directory containing the expected filename(s) when
-you want to override that detection. If you flash an image manually with `dd`
-or Rufus, mount the `RUSTOS_ROOT` partition afterwards and copy the firmware
-into that directory.
 
 **Method 2: Manual (Linux/macOS)**
 ```bash
@@ -508,7 +463,7 @@ RustOS uses a **legacy BIOS bootloader**. To boot on modern systems:
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see [DEVELOPMENT.md](DEVELOPMENT.md) for:
+We welcome contributions! Please see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for:
 - Setting up your development environment
 - Code style guidelines
 - Testing procedures
@@ -566,7 +521,7 @@ Use [conventional commits](https://www.conventionalcommits.org/):
 - Update submodules: `git submodule update --init --recursive --remote`
 - Check network connection
 
-For more troubleshooting, see [DEVELOPMENT.md](DEVELOPMENT.md#troubleshooting).
+For more troubleshooting, see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#troubleshooting).
 
 ## 📄 License
 

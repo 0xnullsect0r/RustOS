@@ -15,8 +15,6 @@ use rustos::println;
 const BOOTLOADER_CONFIG: BootloaderConfig = {
     let mut config = BootloaderConfig::new_default();
     config.mappings.physical_memory = Some(Mapping::Dynamic);
-    // AX210/tcp-ip bring-up currently uses large fixed-size stack allocations
-    // during early boot; keep the kernel boot stack comfortably above that.
     config.kernel_stack_size = 2 * 1024 * 1024;
     config
 };
@@ -87,13 +85,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     // is ready.  Arrow Up/Down will scroll through terminal history.
     rustos::drivers::framebuffer::enable_scrollback();
 
-    // Install embedded tcp-ip management ELF binaries (/bin/wifi etc.).
-    // This must happen after VFS init and heap init.
-    rustos::net_bins::install();
-
-    // Probe PCI for XHCI and mount USB FAT32. WiFi driver bring-up is manual:
-    // users must run `wifi init` after boot so AX210 init is opt-in.
-    rustos::serial_println!("[net] WiFi driver init is manual; run `wifi init`");
+    // Probe PCI for XHCI and mount USB FAT32.
     init_usb_storage();
     rustos::task::keyboard::init();
     rustos::enable_interrupts();
