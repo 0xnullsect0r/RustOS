@@ -16,6 +16,12 @@ AX210_FIRMWARE_SOURCE="${RUSTOS_AX210_FIRMWARE:-}"
 PARTITION_SYNC_DELAY_SECONDS=1
 AX210_FIRMWARE_PRIMARY="iwlwifi-ty-a0-gf-a0-72.ucode"
 AX210_FIRMWARE_FALLBACK="iwlwifi-ty-a0-gf-a0-71.ucode"
+AX210_FIRMWARE_SEARCH_DIRS=(
+    /lib/firmware
+    /usr/lib/firmware
+    /lib/firmware/updates
+    /usr/lib/linux-firmware
+)
 
 # ---------------------------------------------------------------------------
 # Helper functions
@@ -59,6 +65,23 @@ populate_rootfs_skeleton() {
         "$mount_point/var/log"
 }
 
+auto_detect_ax210_firmware_source() {
+    local candidate
+    local firmware_name
+
+    for candidate in "${AX210_FIRMWARE_SEARCH_DIRS[@]}"; do
+        [[ -d "$candidate" ]] || continue
+        for firmware_name in "$AX210_FIRMWARE_PRIMARY" "$AX210_FIRMWARE_FALLBACK"; do
+            if [[ -f "$candidate/$firmware_name" ]]; then
+                printf '%s\n' "$candidate"
+                return 0
+            fi
+        done
+    done
+
+    return 1
+}
+
 provision_ax210_firmware() {
     local mount_point="$1"
     local source="$2"
@@ -67,11 +90,15 @@ provision_ax210_firmware() {
     run_as_root mkdir -p "$firmware_dir"
 
     if [[ -z "$source" ]]; then
-        echo "AX210 firmware not provided. Expected runtime path(s):"
-        echo "  /lib/firmware/$AX210_FIRMWARE_PRIMARY"
-        echo "  /lib/firmware/$AX210_FIRMWARE_FALLBACK"
-        echo "Re-run with --ax210-firmware <file-or-dir> or set RUSTOS_AX210_FIRMWARE to copy a local blob."
-        return 0
+        if source="$(auto_detect_ax210_firmware_source)"; then
+            echo "Auto-detected AX210 firmware source: $source"
+        else
+            echo "AX210 firmware not provided and no host copy was auto-detected. Expected runtime path(s):"
+            echo "  /lib/firmware/$AX210_FIRMWARE_PRIMARY"
+            echo "  /lib/firmware/$AX210_FIRMWARE_FALLBACK"
+            echo "Re-run with --ax210-firmware <file-or-dir> or set RUSTOS_AX210_FIRMWARE to copy a local blob."
+            return 0
+        fi
     fi
 
     if [[ -d "$source" ]]; then
@@ -136,8 +163,8 @@ while [[ $# -gt 0 ]]; do
             echo
             echo "Builds a local RustOS UEFI disk image and writes it to the"
             echo "specified drive.  The drive will be COMPLETELY OVERWRITTEN."
-            echo "If AX210 firmware is provided, it is copied to /lib/firmware/"
-            echo "on the RustOS FAT32 root filesystem."
+            echo "If AX210 firmware is auto-detected or explicitly provided,"
+            echo "it is copied to /lib/firmware/ on the RustOS FAT32 root filesystem."
             echo
             echo "Example:"
             echo "  $0 --drive /dev/sdb"

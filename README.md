@@ -90,7 +90,7 @@ cargo bootimage
 # Using the installer script (recommended)
 ./write_to_drive.sh --drive /dev/sdX
 
-# Optional: copy locally-downloaded AX210 firmware during install
+# Optional: override the auto-detected AX210 firmware source during install
 ./write_to_drive.sh --drive /dev/sdX --ax210-firmware /path/to/linux-firmware
 
 # Or manually with dd
@@ -475,10 +475,13 @@ proprietary blob to this repository, place one of these files on partition 2:
 - `/lib/firmware/iwlwifi-ty-a0-gf-a0-72.ucode`
 - `/lib/firmware/iwlwifi-ty-a0-gf-a0-71.ucode`
 
-`write_to_drive.sh` always creates `/lib/firmware/`, and `--ax210-firmware`
-accepts either a single firmware file or a directory containing the expected
-filename(s). If you flash an image manually with `dd` or Rufus, mount the
-`RUSTOS_ROOT` partition afterwards and copy the firmware into that directory.
+`write_to_drive.sh` always creates `/lib/firmware/` and first tries to
+auto-detect the AX210 firmware from standard host locations such as
+`/lib/firmware` and `/usr/lib/firmware`. `--ax210-firmware` still accepts either
+a single firmware file or a directory containing the expected filename(s) when
+you want to override that detection. If you flash an image manually with `dd`
+or Rufus, mount the `RUSTOS_ROOT` partition afterwards and copy the firmware
+into that directory.
 
 **Method 2: Manual (Linux/macOS)**
 ```bash
