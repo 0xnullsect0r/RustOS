@@ -35,7 +35,7 @@ This guide provides practical information for developers working on RustOS, incl
 # Rust toolchain
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 rustup toolchain install nightly
-rustup component add rust-src llvm-tools-preview --toolchain nightly
+rustup component add rust-src llvm-tools --toolchain nightly
 rustup default nightly
 
 # bootimage tool
