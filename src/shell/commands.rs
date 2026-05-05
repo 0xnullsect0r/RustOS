@@ -1191,6 +1191,32 @@ fn cmd_exec(shell: &mut Shell, args: &[&str]) {
     }
 }
 
+fn exec_embedded_tool(path: &str, tokens: &[&str]) {
+    let data = {
+        let result = VFS.lock().as_mut().and_then(|vfs| vfs.read_file(path).ok());
+        match result {
+            Some(d) => d,
+            None => {
+                crate::println!("{}: not found", path);
+                return;
+            }
+        }
+    };
+
+    let mut line = String::new();
+    for (i, token) in tokens.iter().enumerate() {
+        if i != 0 {
+            line.push(' ');
+        }
+        line.push_str(token);
+    }
+    crate::syscall::queue_stdin_line(line.as_bytes());
+
+    if let Err(e) = crate::process::exec(&data) {
+        crate::println!("{}: load error: {}", path, e);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // usbscan (RustOS-specific)
 // ---------------------------------------------------------------------------
@@ -1843,121 +1869,8 @@ pub fn cmd_wifi(args: &[&str]) {
             }
             Err(msg) => crate::println!("wifi init: {}", msg),
         },
-        "status" | "" => {
-            crate::net::print_status();
-        }
-        "scan" => {
-            if !tcp_ip::kernel::is_active() {
-                crate::println!("wifi scan: driver inactive; run 'wifi init' first");
-                return;
-            }
-            crate::println!("Scanning for wireless networks...");
-            let mut buf = [0u8; 4096];
-            match tcp_ip::kernel::dispatch_syscall(
-                tcp_ip::sys::SYS_WIFI_SCAN,
-                buf.as_mut_ptr() as u64,
-                buf.len() as u64,
-                0,
-            ) {
-                Some(n) if n > 0 => {
-                    let results = tcp_ip::wifi::scan::deserialise(&buf[..n as usize]);
-                    if results.count() == 0 {
-                        crate::println!("wifi: no networks found");
-                        return;
-                    }
-                    for net in results.networks() {
-                        let ssid =
-                            core::str::from_utf8(net.ssid_str()).unwrap_or("<invalid UTF-8>");
-                        crate::println!(
-                            "  SSID: {:32}  Signal: {} dBm  Channel: {}  Security: {}",
-                            ssid,
-                            net.rssi,
-                            net.channel,
-                            net.security_label()
-                        );
-                    }
-                }
-                Some(n) if n < 0 => {
-                    crate::println!("wifi scan: error code {}", n);
-                }
-                _ => {
-                    crate::println!("wifi scan: driver not ready or no AX210 device");
-                }
-            }
-        }
-        "connect" => {
-            if args.len() < 2 {
-                crate::println!("Usage: wifi connect <ssid> [password]");
-            } else {
-                if !tcp_ip::kernel::is_active() {
-                    crate::println!("wifi connect: driver inactive; run 'wifi init' first");
-                    return;
-                }
-
-                let ssid = args[1].as_bytes();
-                let password = args.get(2).copied().unwrap_or("").as_bytes();
-                let security = if password.is_empty() {
-                    tcp_ip::sys::security_proto::OPEN
-                } else {
-                    tcp_ip::sys::security_proto::WPA2
-                };
-
-                let mut connect_args = tcp_ip::sys::WifiConnectArgs {
-                    ssid_len: ssid.len().min(32) as u8,
-                    ssid: [0u8; 32],
-                    security,
-                    pass_len: password.len().min(64) as u8,
-                    pass: [0u8; 64],
-                };
-                connect_args.ssid[..connect_args.ssid_len as usize]
-                    .copy_from_slice(&ssid[..connect_args.ssid_len as usize]);
-                connect_args.pass[..connect_args.pass_len as usize]
-                    .copy_from_slice(&password[..connect_args.pass_len as usize]);
-
-                let connect_bytes = unsafe {
-                    core::slice::from_raw_parts(
-                        &connect_args as *const tcp_ip::sys::WifiConnectArgs as *const u8,
-                        core::mem::size_of::<tcp_ip::sys::WifiConnectArgs>(),
-                    )
-                };
-
-                crate::println!("Connecting to '{}'...", args[1]);
-                match tcp_ip::kernel::dispatch_syscall(
-                    tcp_ip::sys::SYS_WIFI_CONNECT,
-                    connect_bytes.as_ptr() as u64,
-                    connect_bytes.len() as u64,
-                    0,
-                ) {
-                    Some(0) => crate::println!("wifi: connection initiated"),
-                    Some(code) => crate::println!("wifi connect: error code {}", code),
-                    None => crate::println!("wifi connect: syscall unavailable"),
-                }
-            }
-        }
-        "disconnect" => {
-            if !tcp_ip::kernel::is_active() {
-                crate::println!("wifi disconnect: driver inactive; run 'wifi init' first");
-                return;
-            }
-            match tcp_ip::kernel::dispatch_syscall(tcp_ip::sys::SYS_WIFI_DISCONNECT, 0, 0, 0) {
-                Some(0) => crate::println!("wifi: disconnected"),
-                Some(code) => crate::println!("wifi disconnect: error code {}", code),
-                None => crate::println!("wifi disconnect: syscall unavailable"),
-            }
-        }
-        "help" | "--help" | "-h" => {
-            crate::println!("Usage: wifi [init|status|scan|connect <ssid>|disconnect|help]");
-            crate::println!(
-                "  init        Probe PCI, find the AX210, and initialize the WiFi driver"
-            );
-            crate::println!("  status      Show WiFi adapter and connection status (default)");
-            crate::println!("  scan        Scan for nearby wireless networks");
-            crate::println!("  connect     Associate with an SSID");
-            crate::println!("  disconnect  Disconnect from current network");
-        }
-        other => {
-            crate::println!("wifi: unknown subcommand '{}'. Try 'wifi help'.", other);
-        }
+        _ if args.is_empty() => exec_embedded_tool("/bin/wifi", &["status"]),
+        _ => exec_embedded_tool("/bin/wifi", args),
     }
 }
 
@@ -1966,45 +1879,23 @@ pub fn cmd_wifi(args: &[&str]) {
 // ---------------------------------------------------------------------------
 
 pub fn cmd_ping(args: &[&str]) {
-    let host = match args.iter().find(|&&a| !a.starts_with('-')) {
-        Some(&h) if !h.is_empty() => h,
-        _ => {
-            crate::println!("Usage: ping [options] <destination>");
-            return;
-        }
-    };
-    crate::println!("PING {} ({}) 56(84) bytes of data.", host, host);
-    crate::println!("Note: A live TCP/IP stack requires initialised network hardware.");
-    crate::println!("      Use 'net' to view current network state.");
+    exec_embedded_tool("/bin/ping", args);
 }
 
 // ---------------------------------------------------------------------------
 // ifconfig
 // ---------------------------------------------------------------------------
 
-pub fn cmd_ifconfig(_args: &[&str]) {
-    crate::println!("lo: flags=73<UP,LOOPBACK,RUNNING>  mtu 65536");
-    crate::println!("        inet 127.0.0.1  netmask 255.0.0.0");
-    crate::println!("        loop  txqueuelen 1000  (Local Loopback)");
-    crate::println!();
-    crate::println!("wlan0: flags=4098<BROADCAST,MULTICAST>  mtu 1500");
-    crate::println!("        ether 00:00:00:00:00:00  txqueuelen 1000  (Ethernet)");
-    crate::println!("        Status: DOWN");
-    crate::println!();
-    crate::net::print_status();
+pub fn cmd_ifconfig(args: &[&str]) {
+    exec_embedded_tool("/bin/ifconfig", args);
 }
 
 // ---------------------------------------------------------------------------
 // netstat
 // ---------------------------------------------------------------------------
 
-pub fn cmd_netstat(_args: &[&str]) {
-    crate::println!("Active Internet connections (w/o servers)");
-    crate::println!("Proto Recv-Q Send-Q Local Address           Foreign Address         State");
-    crate::println!("(no active connections)");
-    crate::println!();
-    crate::println!("Active UNIX domain sockets (w/o servers)");
-    crate::println!("Proto RefCnt Flags       Type       State         I-Node   Path");
+pub fn cmd_netstat(args: &[&str]) {
+    exec_embedded_tool("/bin/netstat", args);
 }
 struct GrepOptions<'a> {
     pat: &'a str,

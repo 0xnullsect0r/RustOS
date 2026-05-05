@@ -26,6 +26,16 @@ pub const FD_STDERR: u64 = 2;
 /// Holds the exit code of the last process that called sys_exit.
 /// Reset to None before exec(), set by the handler.
 pub static PROCESS_EXIT_CODE: spin::Mutex<Option<i64>> = spin::Mutex::new(None);
+static INJECTED_STDIN: spin::Mutex<Vec<u8>> = spin::Mutex::new(Vec::new());
+
+pub fn queue_stdin_line(line: &[u8]) {
+    let mut injected = INJECTED_STDIN.lock();
+    injected.clear();
+    injected.extend_from_slice(line);
+    if injected.last().copied() != Some(b'\n') {
+        injected.push(b'\n');
+    }
+}
 
 /// Raw int 0x80 syscall gate.
 ///
@@ -153,6 +163,17 @@ fn sys_read(fd: u64, buf: *mut u8, len: usize) -> i64 {
     }
     let out = unsafe { core::slice::from_raw_parts_mut(buf, len) };
     let mut n = 0usize;
+    {
+        let mut injected = INJECTED_STDIN.lock();
+        while n < out.len() && !injected.is_empty() {
+            let b = injected.remove(0);
+            out[n] = b;
+            n += 1;
+            if b == b'\n' || b == b'\r' {
+                return n as i64;
+            }
+        }
+    }
     while n < out.len() {
         match crate::task::keyboard::read_input_byte() {
             Some(b) => {
